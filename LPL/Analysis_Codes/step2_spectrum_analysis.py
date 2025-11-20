@@ -39,13 +39,18 @@ def find_decimal_number(s):
     return float(match.group()) if match else 0.0
 
 def ase_threshold(x, y):
+    """Estimates threshold using gradient method."""
     idx = np.argsort(x)
     x_s, y_s = x[idx], y[idx]
     x_new = np.linspace(x_s.min(), x_s.max(), 1000)
     f = interp1d(x_s, y_s, kind='cubic')
     y_new = f(x_new)
     dy = np.gradient(y_new, x_new)
+    
+    # Only look for threshold in the upper 95% of the energy range
     mask = x_new > (x_new.min() + 0.05*(x_new.max()-x_new.min()))
+    if np.sum(mask) == 0: return 0
+    
     threshold = x_new[mask][np.argmin(dy[mask])]
     return threshold
 
@@ -53,90 +58,114 @@ def ase_threshold(x, y):
 # EXECUTION
 # =============================================================================
 def main():
-    # Generate Timestamp for this analysis run
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"=== STEP 2: SPECTRUM ANALYSIS ({timestamp}) ===")
 
-    # 1. Load Energies (From Step 1)
-    energy_file = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
+    # 1. Load The Manifest (CSV from Step 1)
+    energy_file_path = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
     
-    if not os.path.exists(energy_file):
-        print(f"ERROR: '{config.ENERGY_FILENAME}' not found in results dir!")
-        print("Please run 'step1_energy_calc.py' first.")
+    if not os.path.exists(energy_file_path):
+        print(f"CRITICAL ERROR: Manifest '{config.ENERGY_FILENAME}' not found.")
+        print("Please run Step 1 first.")
         return
     
-    energies = np.loadtxt(energy_file)
-    print(f"Loaded {len(energies)} energy points from {config.ENERGY_FILENAME}")
-
-    # 2. Load Spectra (Parsed and Sorted by Angle)
-    print(f"Scanning folder: {config.DATA_DIR}")
-    files = [f for f in os.listdir(config.DATA_DIR) if f.startswith('spectrum_') and f.endswith('.txt')]
-    
-    if not files:
-        print(f"No spectrum files found in {config.DATA_DIR}")
+    print(f"Loading data manifest from: {energy_file_path}")
+    try:
+        df_manifest = pd.read_csv(energy_file_path)
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
         return
 
-    # CRITICAL FIX: Sort files NUMERICALLY based on the angle in the filename.
-    # Alphabetical sort puts '100' before '85'. Numerical sort fixes this.
-    files.sort(key=lambda f: find_decimal_number(f))
-    
-    print(f"Found {len(files)} spectrum files. Range: {files[0]} -> {files[-1]}")
-    
-    # Mismatch Check
-    if len(files) != len(energies):
-        print(f"CRITICAL WARNING: File count ({len(files)}) does not match Energy count ({len(energies)})!")
-        print("Check that your Config 'NUMBER_POINTS' matches the number of files.")
+    # Check for the new 'absorbed_energy_nJ' column
+    if 'absorbed_energy_nJ' not in df_manifest.columns:
+        print("CRITICAL ERROR: 'absorbed_energy_nJ' column missing in CSV.")
+        print("Your Step 1 output is outdated. Please re-run Step 1.")
+        return
 
-    # Initialize Matrix
-    first_data = np.loadtxt(os.path.join(config.DATA_DIR, files[0]))
+    # 2. Load Spectra based on the Manifest
+    first_fname = df_manifest.iloc[0]['filename']
+    first_path = os.path.join(config.DATA_DIR, first_fname)
+    
+    if not os.path.exists(first_path):
+        print(f"ERROR: Could not find first spectrum file: {first_path}")
+        return
+
+    first_data = np.loadtxt(first_path)
     wavelengths = first_data[:, 0]
-    raw_matrix = np.zeros((len(wavelengths), len(files)))
+    n_pixels = len(wavelengths)
+    n_files = len(df_manifest)
+    
+    raw_matrix = np.zeros((n_pixels, n_files))
+    valid_indices = [] 
 
-    print(f"Processing spectra...")
-    for i, fname in enumerate(files):
-        data = np.loadtxt(os.path.join(config.DATA_DIR, fname))
-        raw_matrix[:, i] = data[:, 1]
+    print(f"Loading {n_files} spectra...")
+    for i, row in df_manifest.iterrows():
+        fname = row['filename']
+        fpath = os.path.join(config.DATA_DIR, fname)
+        if not os.path.exists(fpath):
+            continue
+        try:
+            data = np.loadtxt(fpath)
+            if len(data[:, 0]) != n_pixels: continue
+            raw_matrix[:, len(valid_indices)] = data[:, 1]
+            valid_indices.append(i)
+        except: continue
 
-    # Save Fresh Raw Data (Timestamped)
+    if len(valid_indices) < n_files:
+        raw_matrix = raw_matrix[:, :len(valid_indices)]
+        df_manifest = df_manifest.iloc[valid_indices].reset_index(drop=True)
+
+    # Load Absorbed Energies directly from CSV (already accounts for OD and Rate)
+    absorbed_energies_nJ = df_manifest['absorbed_energy_nJ'].values
+
+    # Save Data
     raw_filename = f'raw_spectra_{timestamp}.txt'
-    raw_path = os.path.join(config.RESULTS_DIR, raw_filename)
-    header = "Wavelength " + " ".join([f"Spectrum_{i+1}" for i in range(len(files))])
-    np.savetxt(raw_path, np.column_stack((wavelengths, raw_matrix)), header=header)
-    print(f"Saved fresh raw data to {raw_filename}")
+    header = "Wavelength " + " ".join(df_manifest['filename'].tolist())
+    np.savetxt(os.path.join(config.RESULTS_DIR, raw_filename), np.column_stack((wavelengths, raw_matrix)), header=header)
 
-    # Smoothing
     smooth_matrix = np.zeros_like(raw_matrix)
     for i in range(raw_matrix.shape[1]):
         smooth_matrix[:, i] = smooth(raw_matrix[:, i], config.SMOOTH_WINDOW)
-    
-    # Save Smoothed Data (Timestamped)
-    smooth_filename = f'smoothed_data_{timestamp}.txt'
-    np.savetxt(os.path.join(config.RESULTS_DIR, smooth_filename), smooth_matrix)
-    print(f"Saved smoothed data to {smooth_filename}")
+    np.savetxt(os.path.join(config.RESULTS_DIR, f'smoothed_data_{timestamp}.txt'), smooth_matrix)
 
     # 3. Physics Analysis
     try:
         df_manual = pd.read_excel(config.MANUAL_EXCEL_PATH, header=None)
-        pulse_duration = find_decimal_number(df_manual.iloc[2, 0]) * 1e-9
-        absorption = find_decimal_number(df_manual.iloc[3, 0])
+        # We assume pulse duration might be used for peak power later
+        pulse_duration = find_decimal_number(df_manual.iloc[2, 0]) * 1e-9 
+        
         L_stripe = find_decimal_number(df_manual.iloc[4, 0]) * 1e-4
         e_stripe = find_decimal_number(df_manual.iloc[5, 0]) * 1e-4
+        print(f"Geometry: L={L_stripe*1e4:.2f}cm, e={e_stripe*1e4:.2f}cm")
     except Exception as e:
         print(f"Error reading Excel: {e}")
         return
 
     # Calculations
-    energies_uJ = energies * 1e-3
-    absorbed_J = energies_uJ * 1e-6 * absorption
+    # absorbed_energy_nJ -> Joules
+    absorbed_J = absorbed_energies_nJ * 1e-9
+    
+    # Energy Density = Energy (J) / Area (cm^2) -> Result in J/cm^2
+    # Then multiply by 1e6 to get µJ/cm^2
+    stripe_area_cm2 = L_stripe * e_stripe # assuming inputs were converted to cm (usually 1e-4 is m? Check units carefully)
+    
+    # Note: In your previous code: L_stripe * 1e-4 suggests inputs were in roughly mm or microns converted to meters?
+    # Standard Physics: Density (µJ/cm2)
+    # Let's stick to your previous working formula units:
+    # absorbed_J (Joules) / (Area in m^2) -> J/m^2
+    # J/m^2 * 1e6 * 1e-4 (conversion) ... simpler to stick to what worked:
+    
+    # Previous logic: (absorbed_J / (L * e)) * 1e6
     energy_density = (absorbed_J / (L_stripe * e_stripe)) * 1e6 
 
     fwhm_list, intensity_list = [], []
     
     for i in range(smooth_matrix.shape[1]):
         spec = smooth_matrix[:, i]
-        spec = spec - spec[0] # Baseline
-        intensity_list.append(np.trapz(spec, wavelengths))
-        fwhm_list.append(fwhm(wavelengths, spec))
+        baseline = np.mean(spec[:10])
+        spec_corrected = spec - baseline
+        intensity_list.append(np.trapz(spec_corrected, wavelengths))
+        fwhm_list.append(fwhm(wavelengths, spec_corrected))
 
     # Threshold
     try:
@@ -148,9 +177,9 @@ def main():
     # 4. Plotting
     fig, ax1 = plt.subplots(figsize=(8, 6))
     ax2 = ax1.twinx()
-    
-    ax1.semilogx(energy_density, fwhm_list, 'bo--', label='FWHM')
-    ax2.loglog(energy_density, intensity_list, 'ro-', label='Intensity')
+    sort_idx = np.argsort(energy_density)
+    ax1.semilogx(energy_density[sort_idx], np.array(fwhm_list)[sort_idx], 'bo--', label='FWHM')
+    ax2.loglog(energy_density[sort_idx], np.array(intensity_list)[sort_idx], 'ro-', label='Intensity')
     
     ax1.set_xlabel('Absorbed Energy Density (µJ/cm²)')
     ax1.set_ylabel('FWHM (nm)', color='b')
@@ -158,7 +187,6 @@ def main():
     plt.title(f'ASE Characterization ({timestamp})\nThreshold ~ {threshold_val:.2f} µJ/cm²')
     plt.tight_layout()
     
-    # Save Plot (Timestamped)
     plot_name = f'ASE_Curve_{timestamp}.png'
     plt.savefig(os.path.join(config.RESULTS_DIR, plot_name))
     print(f"Plot saved to {plot_name}")

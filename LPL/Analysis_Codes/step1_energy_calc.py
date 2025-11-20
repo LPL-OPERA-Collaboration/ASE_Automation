@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.interpolate import interp1d
 import os
-import re  # Added to parse filenames
+import re
 import config  # Imports your variables from config.py
 
 # =============================================================================
@@ -32,13 +32,46 @@ def extract_angle_from_filename(filename):
     match = re.search(r'[-+]?\d*\.\d+|\d+', filename)
     return float(match.group()) if match else None
 
+def get_absorption_rate(file_path):
+    """
+    Reads absorption spectrum, finds value at TARGET_WAVELENGTH, 
+    and returns absorption rate (1 - 10^-OD).
+    """
+    if not os.path.exists(file_path):
+        print(f"WARNING: Absorption file not found: {file_path}")
+        print(" -> Absorption will be set to 0 in the manifest.")
+        return 0.0
+        
+    print(f"Reading absorption spectrum from: {os.path.basename(file_path)}")
+    try:
+        data = np.genfromtxt(file_path, skip_header=config.ABS_SKIP_HEADER, encoding='latin-1', delimiter=',')
+        # Filter out NaNs
+        data = data[~np.isnan(data).any(axis=1)]
+        wavelengths, absorbances = data[:, 0], data[:, 1]
+        
+        # Find closest wavelength
+        idx = np.argmin(np.abs(wavelengths - config.TARGET_WAVELENGTH))
+        closest_wl = wavelengths[idx]
+        abs_val = absorbances[idx]
+        
+        # Calculate rate: 1 - 10^(-OD)
+        abs_rate = 1 - 10**(-abs_val)
+        
+        print(f" > Target: {config.TARGET_WAVELENGTH} nm | Found: {closest_wl:.2f} nm")
+        print(f" > Absorbance (OD): {abs_val:.4f} | Rate: {abs_rate:.4f} ({(abs_rate*100):.1f}%)")
+        return abs_rate
+        
+    except Exception as e:
+        print(f"Error parsing absorption file: {e}")
+        return 0.0
+
 # =============================================================================
 # EXECUTION
 # =============================================================================
 def main():
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
     
-    print(f"=== STEP 1: ENERGY CALCULATION ===")
+    print(f"=== STEP 1: ENERGY & ABSORPTION CALCULATION ===")
     
     # 1. Calculate Reference Energy (The Anchor)
     daily_od_factor = 10 ** config.TODAYS_OD
@@ -57,7 +90,12 @@ def main():
     scale_factor = E_ref / trans_ref
     print(f"Calibration Scale Factor: {scale_factor:.2f}")
     
-    # 3. DETERMINE ANGLES FROM FILES
+    # 3. Determine Absorption Rate (NEW)
+    print(f"\nCalculating Absorption Rate...")
+    abs_file_path = os.path.join(config.DATA_DIR, config.ABSORPTION_FILENAME)
+    absorption_rate = get_absorption_rate(abs_file_path)
+
+    # 4. DETERMINE ANGLES FROM FILES
     print(f"\nScanning for spectra in: {config.DATA_DIR}")
     try:
         files = [f for f in os.listdir(config.DATA_DIR) if f.startswith('spectrum_') and f.endswith('.txt')]
@@ -66,43 +104,49 @@ def main():
         return
 
     if not files:
-        print(f"ERROR: No 'spectrum_*.txt' files found in {config.DATA_DIR}")
-        print("Step 1 now requires spectrum files to determine the angles.")
+        print(f"ERROR: No 'spectrum_*.txt' files found.")
         return
 
-    # Extract angles from filenames
-    print(f"Found {len(files)} spectrum files. Extracting angles...")
-    
-    extracted_angles = []
+    # Extract angles and keep track of filenames
+    data_list = []
     for f in files:
         angle = extract_angle_from_filename(f)
         if angle is not None:
-            extracted_angles.append(angle)
+            data_list.append({'filename': f, 'angle': angle})
     
-    # Sort numerically so energies line up with the spectrum loop in Step 2
-    angles = np.array(sorted(extracted_angles))
-    print(f" > Using {len(angles)} angles extracted from files.")
-    print(f" > Range: {angles[0]:.2f}° to {angles[-1]:.2f}°")
+    # Create DataFrame and sort
+    df_results = pd.DataFrame(data_list)
+    df_results = df_results.sort_values(by='angle').reset_index(drop=True)
+    
+    print(f" > Using {len(df_results)} angles extracted from files.")
 
-    # 4. Calculate Energies
-    transmissions = calib_func(angles)
-    energies = scale_factor * transmissions
+    # 5. Calculate Energies (Incident AND Absorbed)
+    transmissions = calib_func(df_results['angle'])
     
-    # 5. Save Data
+    # Incident Energy (nJ)
+    df_results['energy_nJ'] = scale_factor * transmissions
+    
+    # Absorbed Energy (nJ) - NEW COLUMN
+    df_results['absorbed_energy_nJ'] = df_results['energy_nJ'] * absorption_rate
+    
+    # 6. Save Data as CSV (Manifest)
     save_path = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
-    np.savetxt(save_path, energies, header='Measured energies in nJ')
+    df_results.to_csv(save_path, index=False)
     
-    print(f"\nSUCCESS: Energies calculated for {len(angles)} points.")
-    print(f"Saved to: {save_path}")
+    print(f"\nSUCCESS: Energies calculated for {len(df_results)} points.")
+    print(f"Saved Manifest to: {save_path}")
+    print("Preview:")
+    print(df_results[['filename', 'angle', 'energy_nJ', 'absorbed_energy_nJ']].head())
 
-    # 6. Check Plot
+    # 7. Check Plot
     plt.figure(figsize=(8, 5))
-    plt.plot(angles, energies, 'o-', label='Calculated Energy Profile')
-    plt.plot(config.ANGLE_REF, E_ref, 'r*', markersize=15, label='Daily Anchor Point')
+    plt.plot(df_results['angle'], df_results['energy_nJ'], 'o-', label='Incident Energy')
+    plt.plot(df_results['angle'], df_results['absorbed_energy_nJ'], 's--', label='Absorbed Energy')
+    plt.plot(config.ANGLE_REF, E_ref, 'r*', markersize=15, label='Ref Point')
     plt.xlabel('Angle (degrees)')
     plt.ylabel('Energy (nJ)')
-    plt.title(f'Energy Calibration Check [Data Driven]\nRef: {E_ref:.2f} nJ @ {config.ANGLE_REF}°')
-    plt.grid(True, which='both', alpha=0.6)
+    plt.title(f'Energy Calibration Check\nAbs Rate: {absorption_rate*100:.1f}%')
+    plt.grid(True, alpha=0.6)
     plt.legend()
     plt.tight_layout()
     plt.show()

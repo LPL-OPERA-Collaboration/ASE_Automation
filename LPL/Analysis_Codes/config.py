@@ -6,14 +6,20 @@
 # Use 'r' before strings to handle Windows backslashes correctly
 CSV_CALIB_PATH = r"C:\Users\Equipe_OPAL\Desktop\Kaya\gentec data\20251119_185705_wheel_calibration_190_to_210_by_5.csv"
 
-# Directory containing the spectrum files (e.g., spectrum_85.txt)
+# Directory containing the spectrum files AND the absorption file
 DATA_DIR = r"C:\Users\Equipe_OPAL\Desktop\Kaya"  
 
 RESULTS_DIR = "ASE Results"
 MANUAL_EXCEL_PATH = "Manual_ASE_data.xlsx"
 
 # Shared Filename for communication between Step 1 and Step 2
-ENERGY_FILENAME = "energies.txt"
+ENERGY_FILENAME = "energies.csv"
+
+# --- Absorption Lookup Settings ---
+# The name of your absorption file located inside DATA_DIR
+ABSORPTION_FILENAME = "absorption_spectrum.txt"  # <--- CHANGE THIS to your actual file name
+TARGET_WAVELENGTH = 337     # The pump laser wavelength (nm)
+ABS_SKIP_HEADER = 55        # Number of header lines to skip in the absorption file
 
 # ========================================================
 # CONSTANTS (Equipment Specs at 337 nm)

@@ -32,10 +32,42 @@ def extract_angle_from_filename(filename):
     match = re.search(r'[-+]?\d*\.\d+|\d+', filename)
     return float(match.group()) if match else None
 
+def load_spectrum_robust(file_path):
+    """
+    Smart Parser: Reads a text file and extracts numeric data columns
+    regardless of header length or delimiter (tab, comma, space).
+    Returns: numpy array of shape (N, 2) [Wavelength, Absorbance]
+    """
+    data_rows = []
+    
+    with open(file_path, 'r', encoding='latin-1') as f:
+        for line in f:
+            line = line.strip()
+            if not line: continue # Skip empty lines
+            
+            # normalize delimiters: replace commas and tabs with space
+            cleaned_line = line.replace(',', ' ').replace('\t', ' ')
+            parts = cleaned_line.split()
+            
+            # Try to convert to floats
+            try:
+                # We expect at least 2 numbers (Wavelength, Value)
+                nums = [float(p) for p in parts]
+                if len(nums) >= 2:
+                    data_rows.append(nums[:2]) # Keep only first 2 cols
+            except ValueError:
+                # Line contains text, treat as header and skip
+                continue
+                
+    if not data_rows:
+        raise ValueError("Could not find any numeric data in the file.")
+        
+    return np.array(data_rows)
+
 def get_absorption_rate(file_path):
     """
-    Reads absorption spectrum, finds value at TARGET_WAVELENGTH, 
-    and returns absorption rate (1 - 10^-OD).
+    Reads absorption spectrum using smart parsing, finds value at 
+    TARGET_WAVELENGTH, and returns absorption rate (1 - 10^-OD).
     """
     if not os.path.exists(file_path):
         print(f"WARNING: Absorption file not found: {file_path}")
@@ -44,9 +76,9 @@ def get_absorption_rate(file_path):
         
     print(f"Reading absorption spectrum from: {os.path.basename(file_path)}")
     try:
-        data = np.genfromtxt(file_path, skip_header=config.ABS_SKIP_HEADER, encoding='latin-1', delimiter=',')
-        # Filter out NaNs
-        data = data[~np.isnan(data).any(axis=1)]
+        # Use the new robust loader
+        data = load_spectrum_robust(file_path)
+        
         wavelengths, absorbances = data[:, 0], data[:, 1]
         
         # Find closest wavelength
@@ -90,7 +122,7 @@ def main():
     scale_factor = E_ref / trans_ref
     print(f"Calibration Scale Factor: {scale_factor:.2f}")
     
-    # 3. Determine Absorption Rate (NEW)
+    # 3. Determine Absorption Rate (Robust)
     print(f"\nCalculating Absorption Rate...")
     abs_file_path = os.path.join(config.DATA_DIR, config.ABSORPTION_FILENAME)
     absorption_rate = get_absorption_rate(abs_file_path)
@@ -126,7 +158,7 @@ def main():
     # Incident Energy (nJ)
     df_results['energy_nJ'] = scale_factor * transmissions
     
-    # Absorbed Energy (nJ) - NEW COLUMN
+    # Absorbed Energy (nJ)
     df_results['absorbed_energy_nJ'] = df_results['energy_nJ'] * absorption_rate
     
     # 6. Save Data as CSV (Manifest)

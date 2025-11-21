@@ -17,9 +17,9 @@ ENERGY_FILENAME = "energies.csv"
 
 # --- Absorption Lookup Settings ---
 # The name of your absorption file located inside DATA_DIR
-ABSORPTION_FILENAME = "absorption_spectrum.txt"  # <--- CHANGE THIS to your actual file name
+ABSORPTION_FILENAME = "absorption_spectrum.txt"
 TARGET_WAVELENGTH = 337     # The pump laser wavelength (nm)
-ABS_SKIP_HEADER = 55        # Number of header lines to skip in the absorption file
+# Note: We no longer need a skip_header setting. Step 1 detects data automatically.
 
 # ========================================================
 # CONSTANTS (Equipment Specs at 337 nm)

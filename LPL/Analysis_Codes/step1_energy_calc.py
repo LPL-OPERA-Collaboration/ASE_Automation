@@ -32,6 +32,57 @@ def extract_angle_from_filename(filename):
     match = re.search(r'[-+]?\d*\.\d+|\d+', filename)
     return float(match.group()) if match else None
 
+def find_calibration_file(base_dir):
+    """
+    Searches the BASE_DIR for a CSV file containing the keyword defined in config.
+    Returns the full path if found, or None.
+    """
+    keyword = config.CALIBRATION_FILE_KEYWORD.lower()
+    print(f"Searching for calibration file with keyword '{keyword}' in: {base_dir}")
+    
+    if not os.path.exists(base_dir):
+        print(f"ERROR: Base directory does not exist.")
+        return None
+        
+    # List all files, find one with keyword and '.csv'
+    candidates = [f for f in os.listdir(base_dir) if keyword in f.lower() and f.endswith(".csv")]
+    
+    if not candidates:
+        print(f"ERROR: No CSV file containing '{keyword}' found in BASE_DIR.")
+        return None
+    
+    chosen_file = candidates[0]
+    full_path = os.path.join(base_dir, chosen_file)
+    print(f" -> Found: {chosen_file}")
+    return full_path
+
+def find_absorption_file(base_dir):
+    """
+    Searches the BASE_DIR for a file containing the absorption keyword.
+    Returns the full path if found, or None.
+    """
+    keyword = config.ABSORPTION_FILE_KEYWORD.lower()
+    print(f"Searching for absorption file with keyword '{keyword}' in: {base_dir}")
+    
+    if not os.path.exists(base_dir):
+        print(f"ERROR: Base directory does not exist.")
+        return None
+        
+    # List all files, find one with keyword (accepting .txt, .csv, etc)
+    # Exclude directories
+    candidates = [f for f in os.listdir(base_dir) 
+                  if keyword in f.lower() 
+                  and os.path.isfile(os.path.join(base_dir, f))]
+    
+    if not candidates:
+        print(f"ERROR: No file containing '{keyword}' found in BASE_DIR.")
+        return None
+    
+    chosen_file = candidates[0]
+    full_path = os.path.join(base_dir, chosen_file)
+    print(f" -> Found: {chosen_file}")
+    return full_path
+
 def calculate_spot_area_cm2():
     """Calculates area in cm^2 based on config settings (inputs in microns)."""
     shape = config.SPOT_SHAPE.lower()
@@ -42,23 +93,17 @@ def calculate_spot_area_cm2():
     # Area conversion: um^2 * 1e-8 = cm^2
     
     if shape == "rectangle":
-        # Area = L * W
         area_um2 = d1_um * d2_um
         print(f"Geometry: Rectangle ({d1_um} x {d2_um} µm)")
-        
     elif shape == "circle":
-        # Area = pi * (r)^2 = pi * (d/2)^2
         radius = d1_um / 2.0
         area_um2 = math.pi * (radius ** 2)
         print(f"Geometry: Circle (Diameter {d1_um} µm)")
-        
     elif shape == "ellipse":
-        # Area = pi * a * b (where a, b are semi-axes)
         semi_major = d1_um / 2.0
         semi_minor = d2_um / 2.0
         area_um2 = math.pi * semi_major * semi_minor
         print(f"Geometry: Ellipse ({d1_um} x {d2_um} µm)")
-        
     else:
         raise ValueError(f"Unknown shape in config: {shape}")
     
@@ -82,10 +127,7 @@ def load_spectrum_robust(file_path):
     return np.array(data_rows)
 
 def get_absorption_rate(file_path):
-    """
-    Reads absorption spectrum, finds value CLOSEST to TARGET_WAVELENGTH.
-    (Reverted to single-pixel lookup as requested).
-    """
+    """Reads absorption spectrum, finds value CLOSEST to TARGET_WAVELENGTH."""
     if not os.path.exists(file_path):
         print(f"WARNING: Absorption file not found: {file_path}")
         return 0.0
@@ -95,7 +137,6 @@ def get_absorption_rate(file_path):
         data = load_spectrum_robust(file_path)
         wavelengths, absorbances = data[:, 0], data[:, 1]
         
-        # Find closest single pixel
         idx = np.argmin(np.abs(wavelengths - config.TARGET_WAVELENGTH))
         closest_wl = wavelengths[idx]
         abs_val = absorbances[idx]
@@ -118,7 +159,7 @@ def main():
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
     print(f"=== STEP 1: PHYSICS CALCULATIONS ===")
     
-    # 1. Calculate Spot Area (New Config-based logic)
+    # 1. Calculate Spot Area
     try:
         stripe_area_cm2 = calculate_spot_area_cm2()
     except Exception as e:
@@ -130,14 +171,25 @@ def main():
     E_ref = config.RAW_ENERGY_READ * daily_od_factor * config.TRANSMISSION_LENS
     print(f"Ref Energy: {E_ref:.2f} nJ")
 
-    # 3. Get Curve Shape & Scale Factor
-    calib_func = get_calibration_curve(config.CSV_CALIB_PATH)
+    # 3. Find and Load Calibration Curve
+    calib_path = find_calibration_file(config.BASE_DIR)
+    if not calib_path:
+        print("CRITICAL ERROR: Calibration file missing. Cannot proceed.")
+        return
+
+    print(f"Loading calibration curve from: {os.path.basename(calib_path)}")
+    calib_func = get_calibration_curve(calib_path)
+    
     trans_ref = calib_func(config.ANGLE_REF)
     scale_factor = E_ref / trans_ref
     
-    # 4. Determine Absorption Rate
-    abs_file_path = os.path.join(config.DATA_DIR, config.ABSORPTION_FILENAME)
-    absorption_rate = get_absorption_rate(abs_file_path)
+    # 4. Find and Load Absorption Rate (Updated logic)
+    abs_path = find_absorption_file(config.BASE_DIR)
+    if abs_path:
+        absorption_rate = get_absorption_rate(abs_path)
+    else:
+        print("WARNING: No absorption file found. Assuming Rate = 0.")
+        absorption_rate = 0.0
 
     # 5. Scan Files
     try:
@@ -166,7 +218,6 @@ def main():
     df_results['absorbed_energy_nJ'] = df_results['energy_nJ'] * absorption_rate
     
     # C. Fluence / Energy Density (µJ/cm²)
-    # absorbed (nJ) -> (uJ) = * 1e-3
     df_results['fluence_uJ_cm2'] = (df_results['absorbed_energy_nJ'] * 1e-3) / stripe_area_cm2
     
     # 7. Save Manifest

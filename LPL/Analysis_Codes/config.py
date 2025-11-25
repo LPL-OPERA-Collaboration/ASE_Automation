@@ -1,15 +1,25 @@
+import os
+
 # ========================================================
 # ASE ANALYSIS CONFIGURATION
 # ========================================================
 
-# --- File Paths ---
-CSV_CALIB_PATH = r"C:\Users\Equipe_OPAL\Desktop\Kaya\gentec data\20251119_185705_wheel_calibration_190_to_210_by_5.csv"
-DATA_DIR = r"C:\Users\Equipe_OPAL\Desktop\Kaya"  
-RESULTS_DIR = "ASE Results"
+# --- Directory Structure ---
+# Base directory for the specific measurement session (Update this daily)
+BASE_DIR = r"C:\Users\Equipe_OPAL\Desktop\Kaya\data\20251118_Measurement_56"
+
+# Derived Directories
+DATA_DIR = os.path.join(BASE_DIR, "Raw_Data")  # Where spectra & absorption files are
+RESULTS_DIR = os.path.join(BASE_DIR, "Results") # Where analysis outputs go
+
+# --- Dynamic File Locators ---
 ENERGY_FILENAME = "energies.csv"
 
+# Keywords to search for in BASE_DIR
+CALIBRATION_FILE_KEYWORD = "calibration" 
+ABSORPTION_FILE_KEYWORD = "absorption"
+
 # --- Absorption Lookup Settings ---
-ABSORPTION_FILENAME = "absorption_spectrum.txt"
 TARGET_WAVELENGTH = 337     # Pump laser wavelength (nm)
 
 # ========================================================

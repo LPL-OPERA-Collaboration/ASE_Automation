@@ -6,7 +6,6 @@
 CSV_CALIB_PATH = r"C:\Users\Equipe_OPAL\Desktop\Kaya\gentec data\20251119_185705_wheel_calibration_190_to_210_by_5.csv"
 DATA_DIR = r"C:\Users\Equipe_OPAL\Desktop\Kaya"  
 RESULTS_DIR = "ASE Results"
-MANUAL_EXCEL_PATH = "Manual_ASE_data.xlsx"
 ENERGY_FILENAME = "energies.csv"
 
 # --- Absorption Lookup Settings ---

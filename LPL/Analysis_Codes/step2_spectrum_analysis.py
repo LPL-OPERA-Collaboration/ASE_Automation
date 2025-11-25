@@ -76,9 +76,9 @@ def main():
         print(f"Error reading CSV: {e}")
         return
 
-    # Check for the new 'absorbed_energy_nJ' column
-    if 'absorbed_energy_nJ' not in df_manifest.columns:
-        print("CRITICAL ERROR: 'absorbed_energy_nJ' column missing in CSV.")
+    # Check for the new 'fluence_uJ_cm2' column
+    if 'fluence_uJ_cm2' not in df_manifest.columns:
+        print("CRITICAL ERROR: 'fluence_uJ_cm2' column missing in CSV.")
         print("Your Step 1 output is outdated. Please re-run Step 1.")
         return
 
@@ -115,9 +115,6 @@ def main():
         raw_matrix = raw_matrix[:, :len(valid_indices)]
         df_manifest = df_manifest.iloc[valid_indices].reset_index(drop=True)
 
-    # Load Absorbed Energies directly from CSV (already accounts for OD and Rate)
-    absorbed_energies_nJ = df_manifest['absorbed_energy_nJ'].values
-
     # Save Data
     raw_filename = f'raw_spectra_{timestamp}.txt'
     header = "Wavelength " + " ".join(df_manifest['filename'].tolist())
@@ -129,34 +126,10 @@ def main():
     np.savetxt(os.path.join(config.RESULTS_DIR, f'smoothed_data_{timestamp}.txt'), smooth_matrix)
 
     # 3. Physics Analysis
-    try:
-        df_manual = pd.read_excel(config.MANUAL_EXCEL_PATH, header=None)
-        # We assume pulse duration might be used for peak power later
-        pulse_duration = find_decimal_number(df_manual.iloc[2, 0]) * 1e-9 
-        
-        L_stripe = find_decimal_number(df_manual.iloc[4, 0]) * 1e-4
-        e_stripe = find_decimal_number(df_manual.iloc[5, 0]) * 1e-4
-        print(f"Geometry: L={L_stripe*1e4:.2f}cm, e={e_stripe*1e4:.2f}cm")
-    except Exception as e:
-        print(f"Error reading Excel: {e}")
-        return
-
-    # Calculations
-    # absorbed_energy_nJ -> Joules
-    absorbed_J = absorbed_energies_nJ * 1e-9
-    
-    # Energy Density = Energy (J) / Area (cm^2) -> Result in J/cm^2
-    # Then multiply by 1e6 to get µJ/cm^2
-    stripe_area_cm2 = L_stripe * e_stripe # assuming inputs were converted to cm (usually 1e-4 is m? Check units carefully)
-    
-    # Note: In your previous code: L_stripe * 1e-4 suggests inputs were in roughly mm or microns converted to meters?
-    # Standard Physics: Density (µJ/cm2)
-    # Let's stick to your previous working formula units:
-    # absorbed_J (Joules) / (Area in m^2) -> J/m^2
-    # J/m^2 * 1e6 * 1e-4 (conversion) ... simpler to stick to what worked:
-    
-    # Previous logic: (absorbed_J / (L * e)) * 1e6
-    energy_density = (absorbed_J / (L_stripe * e_stripe)) * 1e6 
+    # We now skip the Excel loading because Step 1 handled the geometry.
+    # The 'fluence_uJ_cm2' column contains the final X-axis values.
+    energy_density = df_manifest['fluence_uJ_cm2'].values
+    print(f"Loaded calculated Fluence (Energy Density) from manifest.")
 
     fwhm_list, intensity_list = [], []
     

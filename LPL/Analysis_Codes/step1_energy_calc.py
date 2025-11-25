@@ -4,6 +4,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 import os
 import re
+import math
 import config  # Imports your variables from config.py
 
 # =============================================================================
@@ -28,68 +29,81 @@ def get_calibration_curve(csv_path):
     return f
 
 def extract_angle_from_filename(filename):
-    """Finds the number in 'spectrum_85.00.txt' -> 85.0"""
     match = re.search(r'[-+]?\d*\.\d+|\d+', filename)
     return float(match.group()) if match else None
 
-def load_spectrum_robust(file_path):
-    """
-    Smart Parser: Reads a text file and extracts numeric data columns
-    regardless of header length or delimiter (tab, comma, space).
-    Returns: numpy array of shape (N, 2) [Wavelength, Absorbance]
-    """
-    data_rows = []
+def calculate_spot_area_cm2():
+    """Calculates area in cm^2 based on config settings (inputs in microns)."""
+    shape = config.SPOT_SHAPE.lower()
+    d1_um = config.SPOT_DIM_1_UM
+    d2_um = config.SPOT_DIM_2_UM
     
+    # Conversion: 1 um = 1e-4 cm
+    # Area conversion: um^2 * 1e-8 = cm^2
+    
+    if shape == "rectangle":
+        # Area = L * W
+        area_um2 = d1_um * d2_um
+        print(f"Geometry: Rectangle ({d1_um} x {d2_um} µm)")
+        
+    elif shape == "circle":
+        # Area = pi * (r)^2 = pi * (d/2)^2
+        radius = d1_um / 2.0
+        area_um2 = math.pi * (radius ** 2)
+        print(f"Geometry: Circle (Diameter {d1_um} µm)")
+        
+    elif shape == "ellipse":
+        # Area = pi * a * b (where a, b are semi-axes)
+        semi_major = d1_um / 2.0
+        semi_minor = d2_um / 2.0
+        area_um2 = math.pi * semi_major * semi_minor
+        print(f"Geometry: Ellipse ({d1_um} x {d2_um} µm)")
+        
+    else:
+        raise ValueError(f"Unknown shape in config: {shape}")
+    
+    area_cm2 = area_um2 * 1e-8
+    print(f" -> Calculated Area: {area_cm2:.4e} cm²")
+    return area_cm2
+
+def load_spectrum_robust(file_path):
+    """Smart Parser: Reads numeric columns regardless of header/delimiter."""
+    data_rows = []
     with open(file_path, 'r', encoding='latin-1') as f:
         for line in f:
             line = line.strip()
-            if not line: continue # Skip empty lines
-            
-            # normalize delimiters: replace commas and tabs with space
+            if not line: continue
             cleaned_line = line.replace(',', ' ').replace('\t', ' ')
-            parts = cleaned_line.split()
-            
-            # Try to convert to floats
             try:
-                # We expect at least 2 numbers (Wavelength, Value)
-                nums = [float(p) for p in parts]
-                if len(nums) >= 2:
-                    data_rows.append(nums[:2]) # Keep only first 2 cols
-            except ValueError:
-                # Line contains text, treat as header and skip
-                continue
-                
-    if not data_rows:
-        raise ValueError("Could not find any numeric data in the file.")
-        
+                nums = [float(p) for p in cleaned_line.split()]
+                if len(nums) >= 2: data_rows.append(nums[:2])
+            except ValueError: continue
+    if not data_rows: raise ValueError("Could not find any numeric data.")
     return np.array(data_rows)
 
 def get_absorption_rate(file_path):
     """
-    Reads absorption spectrum using smart parsing, finds value at 
-    TARGET_WAVELENGTH, and returns absorption rate (1 - 10^-OD).
+    Reads absorption spectrum, finds value CLOSEST to TARGET_WAVELENGTH.
+    (Reverted to single-pixel lookup as requested).
     """
     if not os.path.exists(file_path):
         print(f"WARNING: Absorption file not found: {file_path}")
-        print(" -> Absorption will be set to 0 in the manifest.")
         return 0.0
         
     print(f"Reading absorption spectrum from: {os.path.basename(file_path)}")
     try:
-        # Use the new robust loader
         data = load_spectrum_robust(file_path)
-        
         wavelengths, absorbances = data[:, 0], data[:, 1]
         
-        # Find closest wavelength
+        # Find closest single pixel
         idx = np.argmin(np.abs(wavelengths - config.TARGET_WAVELENGTH))
         closest_wl = wavelengths[idx]
         abs_val = absorbances[idx]
         
-        # Calculate rate: 1 - 10^(-OD)
         abs_rate = 1 - 10**(-abs_val)
         
-        print(f" > Target: {config.TARGET_WAVELENGTH} nm | Found: {closest_wl:.2f} nm")
+        print(f" > Target: {config.TARGET_WAVELENGTH} nm")
+        print(f" > Found:  {closest_wl:.2f} nm")
         print(f" > Absorbance (OD): {abs_val:.4f} | Rate: {abs_rate:.4f} ({(abs_rate*100):.1f}%)")
         return abs_rate
         
@@ -102,82 +116,73 @@ def get_absorption_rate(file_path):
 # =============================================================================
 def main():
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    print(f"=== STEP 1: PHYSICS CALCULATIONS ===")
     
-    print(f"=== STEP 1: ENERGY & ABSORPTION CALCULATION ===")
-    
-    # 1. Calculate Reference Energy (The Anchor)
+    # 1. Calculate Spot Area (New Config-based logic)
+    try:
+        stripe_area_cm2 = calculate_spot_area_cm2()
+    except Exception as e:
+        print(f"CRITICAL GEOMETRY ERROR: {e}")
+        return
+
+    # 2. Calculate Reference Energy
     daily_od_factor = 10 ** config.TODAYS_OD
     E_ref = config.RAW_ENERGY_READ * daily_od_factor * config.TRANSMISSION_LENS
-    
-    print(f"Reference Energy Calculation:")
-    print(f" - Raw Reading: {config.RAW_ENERGY_READ} nJ")
-    print(f" - OD Value:    {config.TODAYS_OD} (Factor: {daily_od_factor:.2f})")
-    print(f" -> CALCULATED REF ENERGY: {E_ref:.2f} nJ")
+    print(f"Ref Energy: {E_ref:.2f} nJ")
 
-    # 2. Get Curve Shape & Scale Factor
-    print(f"\nLoading calibration curve from: {config.CSV_CALIB_PATH}")
+    # 3. Get Curve Shape & Scale Factor
     calib_func = get_calibration_curve(config.CSV_CALIB_PATH)
-    
     trans_ref = calib_func(config.ANGLE_REF)
     scale_factor = E_ref / trans_ref
-    print(f"Calibration Scale Factor: {scale_factor:.2f}")
     
-    # 3. Determine Absorption Rate (Robust)
-    print(f"\nCalculating Absorption Rate...")
+    # 4. Determine Absorption Rate
     abs_file_path = os.path.join(config.DATA_DIR, config.ABSORPTION_FILENAME)
     absorption_rate = get_absorption_rate(abs_file_path)
 
-    # 4. DETERMINE ANGLES FROM FILES
-    print(f"\nScanning for spectra in: {config.DATA_DIR}")
+    # 5. Scan Files
     try:
         files = [f for f in os.listdir(config.DATA_DIR) if f.startswith('spectrum_') and f.endswith('.txt')]
     except FileNotFoundError:
-        print(f"ERROR: Directory not found: {config.DATA_DIR}")
-        return
+        print(f"Directory not found: {config.DATA_DIR}"); return
 
-    if not files:
-        print(f"ERROR: No 'spectrum_*.txt' files found.")
-        return
+    if not files: print(f"No spectrum files found."); return
 
-    # Extract angles and keep track of filenames
     data_list = []
     for f in files:
         angle = extract_angle_from_filename(f)
         if angle is not None:
             data_list.append({'filename': f, 'angle': angle})
     
-    # Create DataFrame and sort
     df_results = pd.DataFrame(data_list)
     df_results = df_results.sort_values(by='angle').reset_index(drop=True)
     
-    print(f" > Using {len(df_results)} angles extracted from files.")
-
-    # 5. Calculate Energies (Incident AND Absorbed)
+    # 6. CALCULATE ALL PHYSICS VALUES
     transmissions = calib_func(df_results['angle'])
     
-    # Incident Energy (nJ)
+    # A. Incident Energy (nJ)
     df_results['energy_nJ'] = scale_factor * transmissions
     
-    # Absorbed Energy (nJ)
+    # B. Absorbed Energy (nJ)
     df_results['absorbed_energy_nJ'] = df_results['energy_nJ'] * absorption_rate
     
-    # 6. Save Data as CSV (Manifest)
+    # C. Fluence / Energy Density (µJ/cm²)
+    # absorbed (nJ) -> (uJ) = * 1e-3
+    df_results['fluence_uJ_cm2'] = (df_results['absorbed_energy_nJ'] * 1e-3) / stripe_area_cm2
+    
+    # 7. Save Manifest
     save_path = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
     df_results.to_csv(save_path, index=False)
     
-    print(f"\nSUCCESS: Energies calculated for {len(df_results)} points.")
-    print(f"Saved Manifest to: {save_path}")
-    print("Preview:")
-    print(df_results[['filename', 'angle', 'energy_nJ', 'absorbed_energy_nJ']].head())
+    print(f"\nSUCCESS. Calculated Fluence using Area {stripe_area_cm2:.2e} cm²")
+    print("Manifest Preview:")
+    print(df_results[['filename', 'angle', 'absorbed_energy_nJ', 'fluence_uJ_cm2']].head())
 
-    # 7. Check Plot
+    # 8. Plot
     plt.figure(figsize=(8, 5))
-    plt.plot(df_results['angle'], df_results['energy_nJ'], 'o-', label='Incident Energy')
-    plt.plot(df_results['angle'], df_results['absorbed_energy_nJ'], 's--', label='Absorbed Energy')
-    plt.plot(config.ANGLE_REF, E_ref, 'r*', markersize=15, label='Ref Point')
+    plt.plot(df_results['angle'], df_results['fluence_uJ_cm2'], 'g^--', label='Fluence (µJ/cm²)')
     plt.xlabel('Angle (degrees)')
-    plt.ylabel('Energy (nJ)')
-    plt.title(f'Energy Calibration Check\nAbs Rate: {absorption_rate*100:.1f}%')
+    plt.ylabel('Fluence (µJ/cm²)')
+    plt.title(f'Final Energy Density Profile\nAbs Rate: {absorption_rate*100:.1f}%')
     plt.grid(True, alpha=0.6)
     plt.legend()
     plt.tight_layout()

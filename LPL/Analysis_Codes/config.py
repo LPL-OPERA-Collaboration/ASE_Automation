@@ -31,7 +31,7 @@ TARGET_WAVELENGTH = 337
 # =============================================================================
 # [USER ACTION] The absolute path to today's measurement folder.
 # This folder MUST contain the Calibration (.csv) and Absorption (.txt) files.
-BASE_DIR = r"C:\Users\Equipe_OPAL\Desktop\Kaya\data\20251118_Measurement_56"
+BASE_DIR = r"C:\Users\Equipe_OPAL\Desktop\Kaya\data\20251126_Measurement_3"
 
 # Derived Directories (Automatically set based on BASE_DIR)
 # The code expects spectra to be in a subfolder named "Raw_Data"

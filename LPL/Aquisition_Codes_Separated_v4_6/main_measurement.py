@@ -160,17 +160,25 @@ class LabAutomation:
         snapshot_folder = f"Used_Acquisition_Codes_{timestamp}"
         snapshot_path = os.path.join(self.save_directory, snapshot_folder)
         
+        # [FIX] Get the directory where THIS script actually lives
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
         try:
             os.makedirs(snapshot_path, exist_ok=True)
-            self.logger.info(f"Created code snapshot folder: {snapshot_folder}")
+            print(f"Created code snapshot folder: {snapshot_folder}")
             
             for filename in files_to_snapshot:
-                if os.path.exists(filename):
-                    shutil.copy2(filename, os.path.join(snapshot_path, filename))
+                # [FIX] Build full path to source file
+                src_file_path = os.path.join(script_dir, filename)
+                
+                if os.path.exists(src_file_path):
+                    shutil.copy2(src_file_path, os.path.join(snapshot_path, filename))
                 else:
-                    self.logger.warning(f"Snapshot skipped (file not found): {filename}")
+                    # [FIX] Use print because self.logger might not be ready
+                    print(f"WARNING: Snapshot skipped (file not found): {src_file_path}")
+                    
         except Exception as e:
-            self.logger.warning(f"Failed to save code snapshot: {e}")
+            print(f"WARNING: Failed to save code snapshot: {e}")
 
 
     def _create_measurement_dir(self):
@@ -625,7 +633,7 @@ class LabAutomation:
             self.plot_fig.canvas.flush_events()
             self.logger.info("Plot window opened.")
             
-            self.logger.info("\n*** PRESS CTRL+C AT ANY TIME TO INITIITE A GRACEFUL SHUTDOWN ***\n")
+            self.logger.info("\n*** PRESS CTRL+C AT ANY TIME TO INITIATE A GRACEFUL SHUTDOWN ***\n")
             self._run_angle_scan()
 
         except KeyboardInterrupt:
@@ -644,7 +652,12 @@ class LabAutomation:
                 self.plot_fig.canvas.manager.set_window_title("Scan Complete - Close this window to exit")
                 plt.show(block=True) 
             
-            self.logger.info("Running final hardware cleanup...")
+            # [FIX] Safe logging in finally block
+            if self.logger:
+                self.logger.info("Running final hardware cleanup...")
+            else:
+                print("Running final hardware cleanup...")
+                
             self._cleanup_hardware()
 
 # ===================================================================

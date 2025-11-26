@@ -4,7 +4,7 @@ import time
 import numpy as np
 import logging
 import sys
-from experiment_config import (
+from aquisition_config import (
     # Hardware/Installation Settings (Section 3)
     CTRL_PROG_ID, MONO_PROG_ID, CCD_PROG_ID, MONO_UNIQUE_ID, CCD_UNIQUE_ID,
     COOLING_THRESHOLD_K, TARGET_DETECTOR_TEMP_K, COOLING_WAIT_TIMEOUT_S,

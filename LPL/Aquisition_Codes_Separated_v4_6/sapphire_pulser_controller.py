@@ -1,7 +1,7 @@
 import qcsapphire
 import time
 import logging
-from experiment_config import (
+from aquisition_config import (
     PULSER_COM_PORT, PULSE_PERIOD_S, PULSE_WIDTH_S, PULSE_VOLTAGE_V
 )
 

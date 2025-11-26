@@ -5,7 +5,7 @@ from scipy.interpolate import interp1d
 import os
 import re
 import math
-import config  # Imports your variables from config.py
+import ASE_Automation.LPL.Analysis_Codes.analysis_config as analysis_config  # Imports your variables from config.py
 
 # =============================================================================
 # INSTRUCTIONS FOR OPERATOR
@@ -69,7 +69,7 @@ def get_angle_from_header(filepath):
 
 def find_calibration_file(base_dir):
     """Auto-detects any file with 'calibration' in the name ending in .csv"""
-    keyword = config.CALIBRATION_FILE_KEYWORD.lower()
+    keyword = analysis_config.CALIBRATION_FILE_KEYWORD.lower()
     print(f"Searching for calibration file with keyword '{keyword}' in: {base_dir}")
     
     try:
@@ -89,7 +89,7 @@ def find_calibration_file(base_dir):
 
 def find_absorption_file(base_dir):
     """Auto-detects any file with 'absorption' in the name."""
-    keyword = config.ABSORPTION_FILE_KEYWORD.lower()
+    keyword = analysis_config.ABSORPTION_FILE_KEYWORD.lower()
     print(f"Searching for absorption file with keyword '{keyword}' in: {base_dir}")
     
     try:
@@ -112,9 +112,9 @@ def calculate_spot_area_cm2():
     """
     Converts dimensions from microns (µm) to cm² because Energy Density is usually in µJ/cm².
     """
-    shape = config.SPOT_SHAPE.lower()
-    d1_um = config.SPOT_DIM_1_UM
-    d2_um = config.SPOT_DIM_2_UM
+    shape = analysis_config.SPOT_SHAPE.lower()
+    d1_um = analysis_config.SPOT_DIM_1_UM
+    d2_um = analysis_config.SPOT_DIM_2_UM
     
     if shape == "rectangle":
         area_um2 = d1_um * d2_um
@@ -165,7 +165,7 @@ def get_absorption_rate(file_path):
         wavelengths, absorbances = data[:, 0], data[:, 1]
         
         # Find index of wavelength closest to 337nm
-        idx = np.argmin(np.abs(wavelengths - config.TARGET_WAVELENGTH))
+        idx = np.argmin(np.abs(wavelengths - analysis_config.TARGET_WAVELENGTH))
         closest_wl = wavelengths[idx]
         abs_val = absorbances[idx]
         
@@ -173,7 +173,7 @@ def get_absorption_rate(file_path):
         # Rate = 1 - 10^(-OD)
         abs_rate = 1 - 10**(-abs_val)
         
-        print(f" > Target: {config.TARGET_WAVELENGTH} nm")
+        print(f" > Target: {analysis_config.TARGET_WAVELENGTH} nm")
         print(f" > Found:  {closest_wl:.2f} nm")
         print(f" > Absorbance (OD): {abs_val:.4f} | Rate: {abs_rate:.4f} ({(abs_rate*100):.1f}%)")
         return abs_rate
@@ -189,19 +189,19 @@ def main():
     print(f"=== STEP 1: PHYSICS CALCULATIONS ===")
     
     # SAFETY CHECK: Verify directories exist
-    if not os.path.exists(config.BASE_DIR):
+    if not os.path.exists(analysis_config.BASE_DIR):
         print(f"\nCRITICAL ERROR: BASE_DIR not found.")
-        print(f"Path searched: {config.BASE_DIR}")
+        print(f"Path searched: {analysis_config.BASE_DIR}")
         print("ACTION: Open config.py and update 'BASE_DIR'.")
         return
     
-    if not os.path.exists(config.DATA_DIR):
+    if not os.path.exists(analysis_config.DATA_DIR):
         print(f"\nCRITICAL ERROR: Raw_Data folder not found.")
-        print(f"Path searched: {config.DATA_DIR}")
+        print(f"Path searched: {analysis_config.DATA_DIR}")
         print("ACTION: Create a folder named 'Raw_Data' inside your measurement folder and put spectra there.")
         return
 
-    os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    os.makedirs(analysis_config.RESULTS_DIR, exist_ok=True)
 
     # 1. Calculate Spot Area
     try:
@@ -212,12 +212,12 @@ def main():
 
     # 2. Calculate Reference Energy
     # E_ref = Reading * 10^OD * Lens_Transmission
-    daily_od_factor = 10 ** config.TODAYS_OD
-    E_ref = config.RAW_ENERGY_READ * daily_od_factor * config.TRANSMISSION_LENS
-    print(f"Ref Energy: {E_ref:.2f} nJ (Calculated from {config.RAW_ENERGY_READ} nJ reading)")
+    daily_od_factor = 10 ** analysis_config.TODAYS_OD
+    E_ref = analysis_config.RAW_ENERGY_READ * daily_od_factor * analysis_config.TRANSMISSION_LENS
+    print(f"Ref Energy: {E_ref:.2f} nJ (Calculated from {analysis_config.RAW_ENERGY_READ} nJ reading)")
 
     # 3. Find and Load Calibration Curve
-    calib_path = find_calibration_file(config.BASE_DIR)
+    calib_path = find_calibration_file(analysis_config.BASE_DIR)
     if not calib_path:
         print("CRITICAL ERROR: Calibration file missing. Cannot proceed.")
         return
@@ -226,11 +226,11 @@ def main():
     calib_func = get_calibration_curve(calib_path)
     
     # Calculate Scaling Factor: How much energy corresponds to 1.0 transmission?
-    trans_ref = calib_func(config.ANGLE_REF)
+    trans_ref = calib_func(analysis_config.ANGLE_REF)
     scale_factor = E_ref / trans_ref
     
     # 4. Find and Load Absorption Rate
-    abs_path = find_absorption_file(config.BASE_DIR)
+    abs_path = find_absorption_file(analysis_config.BASE_DIR)
     if abs_path:
         absorption_rate = get_absorption_rate(abs_path)
     else:
@@ -240,10 +240,10 @@ def main():
     # 5. Scan Files
     try:
         # We accept files that contain 'spectrum' and end in .txt
-        files = [f for f in os.listdir(config.DATA_DIR) 
+        files = [f for f in os.listdir(analysis_config.DATA_DIR) 
                  if 'spectrum' in f.lower() and f.endswith('.txt')]
     except FileNotFoundError:
-        print(f"Directory not found: {config.DATA_DIR}"); return
+        print(f"Directory not found: {analysis_config.DATA_DIR}"); return
 
     if not files: print(f"No spectrum files found."); return
 
@@ -251,7 +251,7 @@ def main():
     print(f"Scanning {len(files)} files...")
     
     for f in files:
-        full_path = os.path.join(config.DATA_DIR, f)
+        full_path = os.path.join(analysis_config.DATA_DIR, f)
         
         # STRICT STRATEGY: Only read angle from file header
         angle = get_angle_from_header(full_path)
@@ -283,7 +283,7 @@ def main():
     df_results['fluence_uJ_cm2'] = (df_results['absorbed_energy_nJ'] * 1e-3) / stripe_area_cm2
     
     # 7. Save Manifest
-    save_path = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
+    save_path = os.path.join(analysis_config.RESULTS_DIR, analysis_config.ENERGY_FILENAME)
     df_results.to_csv(save_path, index=False)
     print(f" -> Saved Manifest to: {save_path}")
     

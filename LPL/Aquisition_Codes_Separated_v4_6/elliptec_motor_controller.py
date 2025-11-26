@@ -1,7 +1,7 @@
 import elliptec
 import logging
 import time
-from experiment_config import (
+from aquisition_config import (
     MOTOR_COM_PORT, MOTOR_ADDRESS, MOTOR_TIMEOUT_S
 )
 

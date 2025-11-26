@@ -50,7 +50,7 @@ ABSORPTION_FILE_KEYWORD = "absorption"
 # Example: If you put the detector at 280 degrees to measure the pump energy.
 ANGLE_REF = 280
 
-# [USER ACTION] The Raw Energy reading from the power meter (in nJ or uJ).
+# [USER ACTION] The Raw Energy reading from the power meter (in nJ).
 # NOTE: Enter the value read from the screen (before math).
 RAW_ENERGY_READ = 24 
 

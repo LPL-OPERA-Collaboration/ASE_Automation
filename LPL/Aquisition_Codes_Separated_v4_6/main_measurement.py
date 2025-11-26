@@ -35,7 +35,7 @@ from sapphire_pulser_controller import SapphirePulserController
 from elliptec_motor_controller import ElliptecMotorController
 
 # --- Import All Configuration Constants ---
-from experiment_config import (
+from aquisition_config import (
     # Experiment Parameters (Section 2)
     START_ANGLE, END_ANGLE, NUM_POINTS, ACCUMULATIONS,
     CHOSEN_SPIKE_FILTER_MODE, CHOSEN_DARK_SUB_MODE, DENOISER_FACTOR,

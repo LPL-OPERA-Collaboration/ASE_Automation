@@ -7,7 +7,7 @@ import os
 import re
 import datetime
 import shutil 
-import config  # Imports your variables from config.py
+import ASE_Automation.LPL.Analysis_Codes.analysis_config as analysis_config  # Imports your variables from config.py
 
 # =============================================================================
 # INSTRUCTIONS FOR OPERATOR
@@ -83,7 +83,7 @@ def save_code_snapshot(base_dir, timestamp):
         os.makedirs(target_dir, exist_ok=True)
         
         # Files to snapshot (Assumes they are in the same folder as this script)
-        files_to_save = ['config.py', 'step1_energy_calc.py', 'step2_spectrum_analysis.py']
+        files_to_save = ['analysis_config.py', 'step1_energy_calc.py', 'step2_spectrum_analysis.py']
         current_script_dir = os.path.dirname(os.path.abspath(__file__))
         
         print(f" -> Snapshotting codes to: {folder_name}/")
@@ -129,19 +129,19 @@ def main():
     print(f"=== STEP 2: SPECTRUM ANALYSIS ({timestamp}) ===")
 
     # SAFETY CHECK
-    if not os.path.exists(config.RESULTS_DIR):
+    if not os.path.exists(analysis_config.RESULTS_DIR):
         print(f"CRITICAL ERROR: Results directory not found.")
         print("ACTION: Run Step 1 first.")
         return
 
     # 0. Save Code Snapshot (Traceability)
-    save_code_snapshot(config.BASE_DIR, timestamp)
+    save_code_snapshot(analysis_config.BASE_DIR, timestamp)
 
     # 1. Load The Manifest (CSV from Step 1)
-    energy_file_path = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
+    energy_file_path = os.path.join(analysis_config.RESULTS_DIR, analysis_config.ENERGY_FILENAME)
     
     if not os.path.exists(energy_file_path):
-        print(f"CRITICAL ERROR: Manifest '{config.ENERGY_FILENAME}' not found.")
+        print(f"CRITICAL ERROR: Manifest '{analysis_config.ENERGY_FILENAME}' not found.")
         return
     
     print(f"Loading data manifest from: {energy_file_path}")
@@ -157,7 +157,7 @@ def main():
 
     # 2. Load Spectra based on the Manifest
     first_fname = df_manifest.iloc[0]['filename']
-    first_path = os.path.join(config.DATA_DIR, first_fname)
+    first_path = os.path.join(analysis_config.DATA_DIR, first_fname)
     
     if not os.path.exists(first_path):
         print(f"ERROR: Could not find first spectrum file: {first_path}")
@@ -177,7 +177,7 @@ def main():
     print(f"Loading {n_files} spectra & checking headers...")
     for i, row in df_manifest.iterrows():
         fname = row['filename']
-        fpath = os.path.join(config.DATA_DIR, fname)
+        fpath = os.path.join(analysis_config.DATA_DIR, fname)
         if not os.path.exists(fpath):
             continue
         try:
@@ -201,7 +201,7 @@ def main():
 
     # Save Combined Data
     raw_filename = f'COMBINED_raw_spectra_{timestamp}.txt'
-    raw_path = os.path.join(config.RESULTS_DIR, raw_filename)
+    raw_path = os.path.join(analysis_config.RESULTS_DIR, raw_filename)
     header = "Wavelength " + " ".join(df_manifest['filename'].tolist())
     
     np.savetxt(raw_path, np.column_stack((wavelengths, raw_matrix)), header=header)
@@ -209,10 +209,10 @@ def main():
 
     smooth_matrix = np.zeros_like(raw_matrix)
     for i in range(raw_matrix.shape[1]):
-        smooth_matrix[:, i] = smooth(raw_matrix[:, i], config.SMOOTH_WINDOW)
+        smooth_matrix[:, i] = smooth(raw_matrix[:, i], analysis_config.SMOOTH_WINDOW)
         
     smooth_filename = f'COMBINED_smoothed_spectra_{timestamp}.txt'
-    smooth_path = os.path.join(config.RESULTS_DIR, smooth_filename)
+    smooth_path = os.path.join(analysis_config.RESULTS_DIR, smooth_filename)
     np.savetxt(smooth_path, smooth_matrix)
     print(f" -> Saved Smoothed Data to: {smooth_filename}")
 
@@ -255,7 +255,7 @@ def main():
     df_summary['Integrated_Intensity'] = corrected_intensity_list
     
     summary_filename = f'final_results_{timestamp}.csv'
-    summary_path = os.path.join(config.RESULTS_DIR, summary_filename)
+    summary_path = os.path.join(analysis_config.RESULTS_DIR, summary_filename)
     
     # We write the Threshold as a comment header, then the dataframe
     with open(summary_path, 'w', newline='') as f:
@@ -282,7 +282,7 @@ def main():
     plt.tight_layout()
     
     plot_name = f'ASE_Curve_{timestamp}.png'
-    plt.savefig(os.path.join(config.RESULTS_DIR, plot_name))
+    plt.savefig(os.path.join(analysis_config.RESULTS_DIR, plot_name))
     print(f"Plot saved to {plot_name}")
     plt.show()
 

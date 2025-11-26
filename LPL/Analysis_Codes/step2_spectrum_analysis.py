@@ -6,19 +6,33 @@ from scipy.signal import savgol_filter
 import os
 import re
 import datetime
+import shutil 
 import config  # Imports your variables from config.py
 
 # =============================================================================
-# TOOLS: SIGNAL PROCESSING
+# INSTRUCTIONS FOR OPERATOR
 # =============================================================================
+# This script performs the "Physics" analysis.
+# It reads the Energy Density calculated in Step 1, matches it with spectra,
+# and generates the S-Curve (FWHM vs Energy).
+#
+# OUTPUTS:
+# 1. COMBINED_*.txt: All your data stitched into one file.
+# 2. final_results_*.csv: Table of FWHM, Intensity, and Fluence.
+# 3. Used_Analysis_Codes_*: Backup of your code for traceability.
+# =============================================================================
+
 def smooth(x, S_value):
-    """Savitzky-Golay smoothing."""
+    """
+    Savitzky-Golay smoothing.
+    NOTE: S_value must be an ODD number. Defined in config.py as SMOOTH_WINDOW.
+    """
     if S_value < 3 or S_value % 2 == 0:
         raise ValueError("Smooth window must be odd and >= 3")
     return savgol_filter(x, S_value, 3)
 
 def fwhm(x, y):
-    """Calculates Full Width at Half Maximum."""
+    """Calculates Full Width at Half Maximum (Spectral narrowing)."""
     y_norm = y / np.max(y)
     lev50 = 0.5
     if np.all(y_norm < lev50): return np.nan
@@ -33,13 +47,11 @@ def fwhm(x, y):
     x2 = np.interp(lev50, [y_norm[i], y_norm[i-1]], [x[i], x[i-1]])
     return x2 - x1
 
-def find_decimal_number(s):
-    """Extracts the first float number found in a string."""
-    match = re.search(r'[-+]?\d*\.\d+|\d+', str(s))
-    return float(match.group()) if match else 0.0
-
 def ase_threshold(x, y):
-    """Estimates threshold using gradient method."""
+    """
+    Estimates the ASE threshold using the derivative (gradient) method.
+    It looks for the point where the FWHM drops the fastest.
+    """
     idx = np.argsort(x)
     x_s, y_s = x[idx], y[idx]
     x_new = np.linspace(x_s.min(), x_s.max(), 1000)
@@ -48,25 +60,62 @@ def ase_threshold(x, y):
     dy = np.gradient(y_new, x_new)
     
     # Only look for threshold in the upper 95% of the energy range
+    # This prevents noise at low energy from confusing the algorithm
     mask = x_new > (x_new.min() + 0.05*(x_new.max()-x_new.min()))
     if np.sum(mask) == 0: return 0
     
     threshold = x_new[mask][np.argmin(dy[mask])]
     return threshold
 
+def save_code_snapshot(base_dir, timestamp):
+    """
+    Creates a backup folder and copies the python scripts used.
+    This guarantees you can always check how the result was calculated later.
+    """
+    folder_name = f"Used_Analysis_Codes_{timestamp}"
+    target_dir = os.path.join(base_dir, folder_name)
+    
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        
+        # Files to snapshot (Assumes they are in the same folder as this script)
+        files_to_save = ['config.py', 'step1_energy_calc.py', 'step2_spectrum_analysis.py']
+        current_script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        print(f" -> Snapshotting codes to: {folder_name}/")
+        
+        for filename in files_to_save:
+            src = os.path.join(current_script_dir, filename)
+            dst = os.path.join(target_dir, filename)
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+            else:
+                print(f"    [WARNING] Could not find {filename} to snapshot.")
+                
+    except Exception as e:
+        print(f"    [WARNING] Failed to save code snapshot: {e}")
+
 # =============================================================================
-# EXECUTION
+# MAIN EXECUTION
 # =============================================================================
 def main():
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"=== STEP 2: SPECTRUM ANALYSIS ({timestamp}) ===")
+
+    # SAFETY CHECK
+    if not os.path.exists(config.RESULTS_DIR):
+        print(f"CRITICAL ERROR: Results directory not found.")
+        print("ACTION: Run Step 1 first.")
+        return
+
+    # 0. Save Code Snapshot (Traceability)
+    save_code_snapshot(config.BASE_DIR, timestamp)
 
     # 1. Load The Manifest (CSV from Step 1)
     energy_file_path = os.path.join(config.RESULTS_DIR, config.ENERGY_FILENAME)
     
     if not os.path.exists(energy_file_path):
         print(f"CRITICAL ERROR: Manifest '{config.ENERGY_FILENAME}' not found.")
-        print("Please run Step 1 first.")
         return
     
     print(f"Loading data manifest from: {energy_file_path}")
@@ -76,10 +125,8 @@ def main():
         print(f"Error reading CSV: {e}")
         return
 
-    # Check for the new 'fluence_uJ_cm2' column
     if 'fluence_uJ_cm2' not in df_manifest.columns:
         print("CRITICAL ERROR: 'fluence_uJ_cm2' column missing in CSV.")
-        print("Your Step 1 output is outdated. Please re-run Step 1.")
         return
 
     # 2. Load Spectra based on the Manifest
@@ -115,19 +162,24 @@ def main():
         raw_matrix = raw_matrix[:, :len(valid_indices)]
         df_manifest = df_manifest.iloc[valid_indices].reset_index(drop=True)
 
-    # Save Data
-    raw_filename = f'raw_spectra_{timestamp}.txt'
+    # Save Combined Data
+    raw_filename = f'COMBINED_raw_spectra_{timestamp}.txt'
+    raw_path = os.path.join(config.RESULTS_DIR, raw_filename)
     header = "Wavelength " + " ".join(df_manifest['filename'].tolist())
-    np.savetxt(os.path.join(config.RESULTS_DIR, raw_filename), np.column_stack((wavelengths, raw_matrix)), header=header)
+    
+    np.savetxt(raw_path, np.column_stack((wavelengths, raw_matrix)), header=header)
+    print(f" -> Saved Raw Spectra to: {raw_filename}")
 
     smooth_matrix = np.zeros_like(raw_matrix)
     for i in range(raw_matrix.shape[1]):
         smooth_matrix[:, i] = smooth(raw_matrix[:, i], config.SMOOTH_WINDOW)
-    np.savetxt(os.path.join(config.RESULTS_DIR, f'smoothed_data_{timestamp}.txt'), smooth_matrix)
+        
+    smooth_filename = f'COMBINED_smoothed_spectra_{timestamp}.txt'
+    smooth_path = os.path.join(config.RESULTS_DIR, smooth_filename)
+    np.savetxt(smooth_path, smooth_matrix)
+    print(f" -> Saved Smoothed Data to: {smooth_filename}")
 
     # 3. Physics Analysis
-    # We now skip the Excel loading because Step 1 handled the geometry.
-    # The 'fluence_uJ_cm2' column contains the final X-axis values.
     energy_density = df_manifest['fluence_uJ_cm2'].values
     print(f"Loaded calculated Fluence (Energy Density) from manifest.")
 
@@ -140,12 +192,27 @@ def main():
         intensity_list.append(np.trapz(spec_corrected, wavelengths))
         fwhm_list.append(fwhm(wavelengths, spec_corrected))
 
-    # Threshold
+    # Threshold Calculation
     try:
         threshold_val = ase_threshold(energy_density, np.array(fwhm_list))
         print(f"Calculated ASE Threshold: {threshold_val:.2f} µJ/cm²")
     except:
         threshold_val = 0
+
+    # Save Final Results Summary to CSV
+    df_summary = df_manifest[['filename', 'fluence_uJ_cm2']].copy()
+    df_summary['FWHM_nm'] = fwhm_list
+    df_summary['Integrated_Intensity'] = intensity_list
+    
+    summary_filename = f'final_results_{timestamp}.csv'
+    summary_path = os.path.join(config.RESULTS_DIR, summary_filename)
+    
+    # We write the Threshold as a comment header, then the dataframe
+    with open(summary_path, 'w', newline='') as f:
+        f.write(f"# ASE Threshold: {threshold_val:.4f} uJ/cm2\n")
+        df_summary.to_csv(f, index=False)
+        
+    print(f" -> Saved Final Results to: {summary_filename}")
 
     # 4. Plotting
     fig, ax1 = plt.subplots(figsize=(8, 6))

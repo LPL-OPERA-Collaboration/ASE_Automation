@@ -15,40 +15,57 @@ import config  # Imports your variables from config.py
 #
 # REQUIREMENTS:
 # 1. 'calibration_*.csv' must be in BASE_DIR. 
-#    Columns required: 'angle', 'energy_J'
+#    Columns required: 'angle', 'energy_corrected_J'
 # 2. 'absorption_*.txt' must be in BASE_DIR.
 # 3. 'spectrum_*.txt' files must be in BASE_DIR/Raw_Data.
+#    * MUST have header line: "# Angle (deg): XX.XX"
 # =============================================================================
 
 def get_calibration_curve(csv_path):
     """
     Loads the calibration CSV.
-    CRITICAL: The CSV headers must be exactly 'angle' and 'energy_J'.
+    CRITICAL: The CSV headers must be exactly 'angle' and 'energy_corrected_J'.
     """
     try:
         df = pd.read_csv(csv_path)
     except FileNotFoundError:
         raise FileNotFoundError(f"Calibration CSV not found: {csv_path}")
 
-    # Check for correct column names to avoid confusing errors later
-    if 'angle' not in df.columns or 'energy_J' not in df.columns:
-        raise ValueError(f"CSV ERROR: File {os.path.basename(csv_path)} must contain 'angle' and 'energy_J' columns.")
+    # Check for the CORRECTED energy column
+    if 'angle' not in df.columns or 'energy_corrected_J' not in df.columns:
+        raise ValueError(f"CSV ERROR: File {os.path.basename(csv_path)} must contain 'angle' and 'energy_corrected_J'.\n"
+                         "Did you run the new Step 0 acquisition script?")
 
     df = df.sort_values(by='angle')
-    max_energy = df['energy_J'].max()
     
+    # Use Corrected Energy for normalization
+    max_energy = df['energy_corrected_J'].max()
+    
+    if max_energy == 0:
+        raise ValueError("Max energy in Calibration CSV is 0. Check your data.")
+
     # Normalize the curve so the max is 1.0 (100% transmission)
-    normalized = df['energy_J'] / max_energy
+    normalized = df['energy_corrected_J'] / max_energy
     f = interp1d(df['angle'], normalized, kind='cubic', bounds_error=False, fill_value="extrapolate")
     return f
 
-def extract_angle_from_filename(filename):
+def get_angle_from_header(filepath):
     """
-    Parses 'spectrum_280.txt' -> 280.0
-    Parses 'spectrum_280.5.txt' -> 280.5
+    Scans the file content for the line: '# Angle (deg): 96.94'
+    Returns float if found, None if not.
     """
-    match = re.search(r'[-+]?\d*\.\d+|\d+', filename)
-    return float(match.group()) if match else None
+    try:
+        with open(filepath, 'r', encoding='latin-1') as f:
+            for _ in range(20): # Check first 20 lines only
+                line = f.readline()
+                if "# Angle (deg):" in line:
+                    # Parse value after colon
+                    parts = line.split(':')
+                    if len(parts) > 1:
+                        return float(parts[1].strip())
+    except Exception:
+        pass 
+    return None
 
 def find_calibration_file(base_dir):
     """Auto-detects any file with 'calibration' in the name ending in .csv"""
@@ -127,6 +144,9 @@ def load_spectrum_robust(file_path):
             if not line: continue
             cleaned_line = line.replace(',', ' ').replace('\t', ' ')
             try:
+                # Check if line starts with # (Comment)
+                if line.startswith('#'): continue
+                
                 nums = [float(p) for p in cleaned_line.split()]
                 if len(nums) >= 2: data_rows.append(nums[:2])
             except ValueError: continue
@@ -219,17 +239,33 @@ def main():
 
     # 5. Scan Files
     try:
-        files = [f for f in os.listdir(config.DATA_DIR) if f.startswith('spectrum_') and f.endswith('.txt')]
+        # We accept files that contain 'spectrum' and end in .txt
+        files = [f for f in os.listdir(config.DATA_DIR) 
+                 if 'spectrum' in f.lower() and f.endswith('.txt')]
     except FileNotFoundError:
         print(f"Directory not found: {config.DATA_DIR}"); return
 
     if not files: print(f"No spectrum files found."); return
 
     data_list = []
+    print(f"Scanning {len(files)} files...")
+    
     for f in files:
-        angle = extract_angle_from_filename(f)
+        full_path = os.path.join(config.DATA_DIR, f)
+        
+        # STRICT STRATEGY: Only read angle from file header
+        angle = get_angle_from_header(full_path)
+            
         if angle is not None:
             data_list.append({'filename': f, 'angle': angle})
+        else:
+            print(f" [SKIP] Header '# Angle (deg):' not found in: {f}")
+            pass
+            
+    if not data_list:
+        print("CRITICAL ERROR: Could not extract angles from ANY files.")
+        print("Check if your text files contain the line '# Angle (deg): XX.XX'")
+        return
     
     df_results = pd.DataFrame(data_list)
     df_results = df_results.sort_values(by='angle').reset_index(drop=True)

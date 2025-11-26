@@ -145,6 +145,34 @@ class LabAutomation:
         else:
             print(message) 
 
+
+    def _save_code_snapshot(self):
+        """Creates a timestamped folder and copies source code into it."""
+        files_to_snapshot = [
+            "main_measurement.py", 
+            "experiment_config.py",
+            "horiba_spectrometer_controller.py",
+            "sapphire_pulser_controller.py",
+            "elliptec_motor_controller.py"
+        ]
+        
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        snapshot_folder = f"Used_Acquisition_Codes_{timestamp}"
+        snapshot_path = os.path.join(self.save_directory, snapshot_folder)
+        
+        try:
+            os.makedirs(snapshot_path, exist_ok=True)
+            self.logger.info(f"Created code snapshot folder: {snapshot_folder}")
+            
+            for filename in files_to_snapshot:
+                if os.path.exists(filename):
+                    shutil.copy2(filename, os.path.join(snapshot_path, filename))
+                else:
+                    self.logger.warning(f"Snapshot skipped (file not found): {filename}")
+        except Exception as e:
+            self.logger.warning(f"Failed to save code snapshot: {e}")
+
+
     def _create_measurement_dir(self):
         """Finds and creates a unique measurement directory for this run."""
         print(f"Ensuring base save directory exists: {BASE_SAVE_DIRECTORY}")
@@ -164,23 +192,20 @@ class LabAutomation:
                 break
             measurement_num += 1
             
-        try:
-            current_script_path = ""
-            if 'main_measurement.py' in locals():
-                 current_script_path = 'main_measurement.py'
-            
-            if current_script_path:
-                shutil.copyfile('main_measurement.py', os.path.join(self.save_directory, f"{self.script_run_date}_main_measurement_snapshot.py"))
-                shutil.copyfile('horiba_spectrometer_controller.py', os.path.join(self.save_directory, 'horiba_spectrometer_controller_snapshot.py'))
-                shutil.copyfile('sapphire_pulser_controller.py', os.path.join(self.save_directory, 'sapphire_pulser_controller_snapshot.py'))
-                shutil.copyfile('elliptec_motor_controller.py', os.path.join(self.save_directory, 'elliptec_motor_controller_snapshot.py'))
-                shutil.copyfile('experiment_config.py', os.path.join(self.save_directory, 'experiment_config_snapshot.py'))
-                print(f"Saved script snapshots.")
-            else:
-                print("Skipping script snapshot (running interactively or file paths not found)")
-        except Exception as e_copy:
-            print(f"WARNING: Could not save script snapshot. {e_copy}")
+        # =================================================================
+        # [NEW] 1. Create the 'Raw_Data' subfolder for Spectra
+        # =================================================================
+        raw_data_path = os.path.join(self.save_directory, "Raw_Data")
+        os.makedirs(raw_data_path, exist_ok=True)
+        print(f"Created subfolder: {raw_data_path}")
 
+        # =================================================================
+        # [NEW] 2. Call the dedicated snapshot method
+        # (This REPLACES the old 'try... shutil.copyfile...' block)
+        # =================================================================
+        self._save_code_snapshot()
+            
+        
 
     def _connect_hardware(self):
         """Connects to all hardware components in sequence."""
@@ -433,15 +458,18 @@ class LabAutomation:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
             base_filename = f"{self.script_run_date}_spectrum_angle_{target_angle:.2f}deg_t_{current_integ_time}s_id_{signal_spectrum_id}_{timestamp}"
 
-            # Save TSF (Denoised Raw Signal)
+            # [NEW] Define the subfolder path specifically for data
+            raw_data_dir = os.path.join(self.save_directory, "Raw_Data")
+
+            # Save TSF
             tsf_filename = f"{base_filename}.tsf"
-            full_tsf_path = os.path.join(self.save_directory, tsf_filename)
+            full_tsf_path = os.path.join(raw_data_dir, tsf_filename) # <--- UPDATED
             self.spectrometer_controller.save_tsf_file(signal_spectrum_id, full_tsf_path)
             self.logger.info(f"   Denoised Raw Signal TSF saved to: {full_tsf_path}")
 
-            # Save TXT (Subtracted Data)
+            # Save TXT
             txt_filename = f"{base_filename}_Subtracted_Denoised.txt"
-            full_txt_path = os.path.join(self.save_directory, txt_filename)
+            full_txt_path = os.path.join(raw_data_dir, txt_filename)
             
             header_lines = [
                 f"Date: {timestamp}",

@@ -7,7 +7,7 @@ import os
 import re
 import datetime
 import shutil 
-import ASE_Automation.LPL.Analysis_Codes.analysis_config as analysis_config  # Imports your variables from config.py
+import analysis_config as analysis_config  # Imports your variables from config.py
 
 # =============================================================================
 # INSTRUCTIONS FOR OPERATOR
@@ -163,7 +163,7 @@ def main():
         print(f"ERROR: Could not find first spectrum file: {first_path}")
         return
 
-    first_data = np.loadtxt(first_path)
+    first_data = np.loadtxt(first_path, delimiter=',')
     wavelengths = first_data[:, 0]
     n_pixels = len(wavelengths)
     n_files = len(df_manifest)
@@ -182,7 +182,7 @@ def main():
             continue
         try:
             # Load Data
-            data = np.loadtxt(fpath)
+            data = np.loadtxt(fpath, delimiter=',')
             if len(data[:, 0]) != n_pixels: continue
             
             # Load Integration Time

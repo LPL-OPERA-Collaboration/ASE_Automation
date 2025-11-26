@@ -60,8 +60,8 @@ class Config:
     DETECTION_WAVELENGTH: int = 337
     
     # --- Scan Logic ---
-    START_ANGLE: float = 190.0
-    END_ANGLE: float = 210.0
+    START_ANGLE: float = 60.0
+    END_ANGLE: float = 300.0
     STEP_ANGLE: float = 5.0
     MOVE_SETTLE_TIME: float = 0.5
     

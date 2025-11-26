@@ -70,7 +70,7 @@ ACCUMULATIONS = 1
 
 # --- Smart Acquisition Parameters ---
 # A list of integration times (in seconds) to try, from longest to shortest.
-INTEGRATION_TIME_PRESETS_S = [1.0, 0.8, 0.5, 0.2, 0.1]
+INTEGRATION_TIME_PRESETS_S = [4.0, 0.1]
 
 # The "soft" threshold. If max counts are ABOVE this, we will
 # proactively step down the integration time for the *next* angle.
@@ -83,7 +83,7 @@ DENOISER_FACTOR = 50.0
 
 # --- Spectrometer Setup ---
 TARGET_GRATING_INDEX = 1 
-TARGET_WAVELENGTH_NM = 550.0 
+TARGET_WAVELENGTH_NM = 450.0 
 
 # --- Pulser Setup ---
 PULSE_WIDTH_S = 5e-6 
@@ -106,7 +106,7 @@ PAUSE_AFTER_MOVE_S = 0.5
 
 # --- Pulser (Sapphire) ---
 PULSER_COM_PORT = 'COM5'
-PULSE_PERIOD_S = 0.3 
+PULSE_PERIOD_S = 0.1 
 PULSE_VOLTAGE_V = 5.0
 
 # --- Spectrometer (Horiba) ---

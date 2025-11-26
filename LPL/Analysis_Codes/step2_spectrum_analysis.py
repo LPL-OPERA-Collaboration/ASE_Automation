@@ -16,9 +16,13 @@ import config  # Imports your variables from config.py
 # It reads the Energy Density calculated in Step 1, matches it with spectra,
 # and generates the S-Curve (FWHM vs Energy).
 #
+# NEW FEATURE:
+# It now reads the "Integration Time" from the file header to normalize intensity.
+# Integrated_Intensity = (Area under curve) / (Integration Time)
+#
 # OUTPUTS:
 # 1. COMBINED_*.txt: All your data stitched into one file.
-# 2. final_results_*.csv: Table of FWHM, Intensity, and Fluence.
+# 2. final_results_*.csv: Table of FWHM, Raw/Corrected Intensity, and Fluence.
 # 3. Used_Analysis_Codes_*: Backup of your code for traceability.
 # =============================================================================
 
@@ -95,6 +99,28 @@ def save_code_snapshot(base_dir, timestamp):
     except Exception as e:
         print(f"    [WARNING] Failed to save code snapshot: {e}")
 
+def get_integration_time(filepath):
+    """
+    Reads the file header to find the Integration Time.
+    Looks for line: '# Integration Time (s): 1.0'
+    Returns 1.0 if not found (to avoid division by zero).
+    """
+    try:
+        with open(filepath, 'r', encoding='latin-1') as f:
+            for _ in range(20): # Only check first 20 lines
+                line = f.readline()
+                if "Integration Time (s):" in line:
+                    # Extract the number after the colon
+                    parts = line.split(':')
+                    if len(parts) > 1:
+                        val = float(parts[1].strip())
+                        return val
+    except Exception as e:
+        pass # If error, return default
+    
+    print(f"    [WARNING] Could not find Integration Time in {os.path.basename(filepath)}. Assuming 1.0s")
+    return 1.0
+
 # =============================================================================
 # MAIN EXECUTION
 # =============================================================================
@@ -144,23 +170,34 @@ def main():
     
     raw_matrix = np.zeros((n_pixels, n_files))
     valid_indices = [] 
+    
+    # [NEW] List to store integration times
+    integration_times = []
 
-    print(f"Loading {n_files} spectra...")
+    print(f"Loading {n_files} spectra & checking headers...")
     for i, row in df_manifest.iterrows():
         fname = row['filename']
         fpath = os.path.join(config.DATA_DIR, fname)
         if not os.path.exists(fpath):
             continue
         try:
+            # Load Data
             data = np.loadtxt(fpath)
             if len(data[:, 0]) != n_pixels: continue
+            
+            # Load Integration Time
+            int_time = get_integration_time(fpath)
+            
             raw_matrix[:, len(valid_indices)] = data[:, 1]
             valid_indices.append(i)
+            integration_times.append(int_time)
+            
         except: continue
 
     if len(valid_indices) < n_files:
         raw_matrix = raw_matrix[:, :len(valid_indices)]
         df_manifest = df_manifest.iloc[valid_indices].reset_index(drop=True)
+        # integration_times list matches valid_indices naturally
 
     # Save Combined Data
     raw_filename = f'COMBINED_raw_spectra_{timestamp}.txt'
@@ -183,16 +220,27 @@ def main():
     energy_density = df_manifest['fluence_uJ_cm2'].values
     print(f"Loaded calculated Fluence (Energy Density) from manifest.")
 
-    fwhm_list, intensity_list = [], []
+    fwhm_list = []
+    raw_intensity_list = [] # Area under curve
+    corrected_intensity_list = [] # Area / Time
     
     for i in range(smooth_matrix.shape[1]):
         spec = smooth_matrix[:, i]
+        t_int = integration_times[i]
+        
         baseline = np.mean(spec[:10])
         spec_corrected = spec - baseline
-        intensity_list.append(np.trapz(spec_corrected, wavelengths))
+        
+        # Calculate Raw Area
+        raw_area = np.trapz(spec_corrected, wavelengths)
+        raw_intensity_list.append(raw_area)
+        
+        # Calculate Corrected Intensity (Area / Time)
+        corrected_intensity_list.append(raw_area / t_int)
+        
         fwhm_list.append(fwhm(wavelengths, spec_corrected))
 
-    # Threshold Calculation
+    # Threshold Calculation (using FWHM)
     try:
         threshold_val = ase_threshold(energy_density, np.array(fwhm_list))
         print(f"Calculated ASE Threshold: {threshold_val:.2f} µJ/cm²")
@@ -201,8 +249,10 @@ def main():
 
     # Save Final Results Summary to CSV
     df_summary = df_manifest[['filename', 'fluence_uJ_cm2']].copy()
+    df_summary['Integration_Time_s'] = integration_times
     df_summary['FWHM_nm'] = fwhm_list
-    df_summary['Integrated_Intensity'] = intensity_list
+    df_summary['Raw_Integrated_Intensity'] = raw_intensity_list
+    df_summary['Integrated_Intensity'] = corrected_intensity_list
     
     summary_filename = f'final_results_{timestamp}.csv'
     summary_path = os.path.join(config.RESULTS_DIR, summary_filename)
@@ -218,12 +268,16 @@ def main():
     fig, ax1 = plt.subplots(figsize=(8, 6))
     ax2 = ax1.twinx()
     sort_idx = np.argsort(energy_density)
+    
+    # Plotting FWHM vs Fluence
     ax1.semilogx(energy_density[sort_idx], np.array(fwhm_list)[sort_idx], 'bo--', label='FWHM')
-    ax2.loglog(energy_density[sort_idx], np.array(intensity_list)[sort_idx], 'ro-', label='Intensity')
+    
+    # Plotting CORRECTED Intensity vs Fluence
+    ax2.loglog(energy_density[sort_idx], np.array(corrected_intensity_list)[sort_idx], 'ro-', label='Integrated Intensity')
     
     ax1.set_xlabel('Absorbed Energy Density (µJ/cm²)')
     ax1.set_ylabel('FWHM (nm)', color='b')
-    ax2.set_ylabel('Integrated Intensity (a.u.)', color='r')
+    ax2.set_ylabel('Integrated Intensity (Counts*nm/s)', color='r')
     plt.title(f'ASE Characterization ({timestamp})\nThreshold ~ {threshold_val:.2f} µJ/cm²')
     plt.tight_layout()
     

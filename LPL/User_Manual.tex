@@ -18,8 +18,7 @@
 }
 
 % --- Title ---
-\title{Angle-Resolved Spectroscopy: Everyday User Manual}
-\author{OPAL Lab}
+\title{Automated ASE Measurement User Manual}
 \date{\today}
 
 \begin{document}
@@ -27,20 +26,6 @@
 \maketitle
 \tableofcontents
 \newpage
-
-% =============================================================================
-% PREREQUISITES
-% =============================================================================
-\section*{Prerequisites}
-Before starting, ensure you have:
-\begin{enumerate}
-    \item \textbf{Calibration File:} The \texttt{wheel\_calibration.csv} file in the \texttt{gentec data} folder.
-    \item \textbf{Absorption Data:} The UV-Vis absorption spectrum of your sample.
-    \item \textbf{Hardware:} The laser should be warm and the fiber aligned.
-\end{enumerate}
-
-\hrule
-\vspace{1em}
 
 % =============================================================================
 % PART A
@@ -52,17 +37,17 @@ Turn on the equipment in this exact order:
 \begin{enumerate}
     \item \textbf{Horiba iHR550} (Monochromator Switch)
     \item \textbf{Horiba Synapse} (Plug in Camera Power)
-    \item \textbf{SDRIVE-500} (Shutter Switch)
+    \item \textbf{Horiba SDRIVE-500} (Shutter Switch)
     \item \textbf{QC Sapphire} (Pulser Switch)
     \item \textbf{N2 Laser} (Turn Key)
     \item \textbf{Thorlabs Motor} (Powered via PC)
 \end{enumerate}
 
-\subsection{2. Manual Alignment (Critical Step)}
-Before automation, align the system manually.
+\subsection{2. Manual Alignment}
+Before running the codes, align the system manually.
 
 \begin{enumerate}
-    \item Open \textbf{LabSpec 6}, \textbf{ELLO} (Motor), and \textbf{QC\_9200} (Pulser).
+    \item Open \textbf{LabSpec 6}, \textbf{ELLO} (Motor), and \textbf{QC\_9200} (Pulser, Optional).
     \item Move the sample to a high-signal angle (e.g., 280 degrees) using ELLO.
     \item Start \textbf{Real-Time Display} in LabSpec.
     \item Align the detector to maximize signal.
@@ -73,6 +58,37 @@ Before automation, align the system manually.
 \end{enumerate}
 
 \textbf{IMPORTANT:} You \textbf{MUST CLOSE} LabSpec, ELLO, and QC\_9200 before proceeding. If they remain open, the automation script will fail.
+
+\subsection{3. Directory \& File Structure}
+After alignment, navigate to the project folder to locate the scripts.
+
+\textbf{Base Directory:}
+\begin{lstlisting}
+C:\Users\Equipe_OPAL\Documents\GitHub\LPL-OPERA-Collaboration\ASE_Automation
+\end{lstlisting}
+
+\textbf{Working Folder (LPL):}
+All operations for this experiment are performed within the \textbf{LPL} folder.
+
+\dirtree{%
+.1 ASE\_Automation.
+.2 LPL \textit{(Current Working Directory)}.
+.3 aquisition codes.
+.4 aquisition\_config.py \textbf{(Edit this)}.
+.4 main\_measurement.py \textbf{(Run this)}.
+.4 elliptec\_motor\_controller.py.
+.4 horiba\_spectrometer\_controller.py.
+.4 sapphire\_pulser\_controller.py.
+.3 analysis codes.
+.4 analysis\_config.py \textbf{(Edit this)}.
+.4 step1\_energy\_calc.py.
+.4 step2\_signal\_processing.py.
+.4 step3\_spectrum\_analysis.py.
+.3 callibration.py \textbf{(For Filter Wheel)}.
+.3 file\_location\_memo.py.
+.2 OPERA.
+.2 shared.
+}
 
 \subsection{3. Configuration}
 Open \texttt{aquisition\_config.py} and edit Section 2:

@@ -40,7 +40,7 @@ from aquisition_config import (
     START_ANGLE, END_ANGLE, NUM_POINTS, ACCUMULATIONS,
     CHOSEN_SPIKE_FILTER_MODE, CHOSEN_DARK_SUB_MODE, DENOISER_FACTOR,
     BASE_SAVE_DIRECTORY, SATURATION_THRESHOLD, INTEGRATION_TIME_PRESETS_S,
-    INTEGRATION_WARNING_THRESHOLD,
+    SATURATION_WARNING_THRESHOLD,
     # Hardware/Installation Settings (Section 3)
     PAUSE_AFTER_MOVE_S
 )
@@ -432,7 +432,7 @@ class LabAutomation:
             # 1. Update State Memory
             current_index = INTEGRATION_TIME_PRESETS_S.index(current_integ_time)
             
-            if max_intensity >= INTEGRATION_WARNING_THRESHOLD:
+            if max_intensity >= SATURATION_WARNING_THRESHOLD:
                 self.logger.info("   Signal is HIGH. Proactively stepping down guess time for next angle.")
                 next_index = min(current_index + 1, len(INTEGRATION_TIME_PRESETS_S) - 1)
             else:

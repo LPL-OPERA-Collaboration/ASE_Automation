@@ -1,24 +1,14 @@
 """
 Configuration File for the Angle-Resolved Spectroscopy Experiment
 
-This file is organized into three main sections:
-
-SECTION 1: STATIC DRIVER CONSTANTS
-  - "Magic numbers" defined by the manufacturer's drivers (e.g., COM objects, flags).
-  - DO NOT EDIT these values unless you are certain the driver API has changed.
-
-SECTION 2: EXPERIMENT PARAMETERS
-  - Settings you change for *each new experiment* (e.g., angles, integration time).
-
-SECTION 3: HARDWARE & INSTALLATION SETTINGS
-  - Settings specific to your *physical setup* (e.g., COM ports, fixed temps, software IDs).
-  - You set these once and rarely change them.
+This file is organized into three main sections (SECTION 1,2,3)
 """
 
 # ===================================================================
 # --- SECTION 1: STATIC DRIVER CONSTANTS ---
 # ===================================================================
 # (Manufacturer-defined "magic numbers". DO NOT EDIT.)
+# This section is on top because some parameters below uses these constants.
 
 # --- LabSpec ActiveX Constants ---
 ACQ_SPECTRUM = 0
@@ -60,7 +50,10 @@ MIRROR_SIDE = 3
 # ===================================================================
 # --- SECTION 2: EXPERIMENT PARAMETERS ---
 # ===================================================================
-# (Parameters you will change most often for a new experiment)
+# (Parameters you can change / have to check for each measuement)
+
+# --- Save Diectory ---
+BASE_SAVE_DIRECTORY = r"C:\Users\Equipe_OPAL\Desktop\Kaya\data"
 
 # --- Scan & Sequence Parameters ---
 START_ANGLE = 85.0
@@ -74,12 +67,8 @@ INTEGRATION_TIME_PRESETS_S = [4.0, 0.1]
 
 # The "soft" threshold. If max counts are ABOVE this, we will
 # proactively step down the integration time for the *next* angle.
-INTEGRATION_WARNING_THRESHOLD = 50000 
+SATURATION_WARNING_THRESHOLD = 50000 
 
-# --- Acquisition Settings (Using constants from SECTION 1) ---
-CHOSEN_SPIKE_FILTER_MODE = ACQ_SINGLE_SPIKE_REMOVING
-CHOSEN_DARK_SUB_MODE = ACQ_NO_DARK 
-DENOISER_FACTOR = 50.0 
 
 # --- Spectrometer Setup ---
 TARGET_GRATING_INDEX = 1 
@@ -87,16 +76,13 @@ TARGET_WAVELENGTH_NM = 450.0
 
 # --- Pulser Setup ---
 PULSE_WIDTH_S = 5e-6 
-
-# --- General Experiment Setup ---
-BASE_SAVE_DIRECTORY = r"C:\Users\Equipe_OPAL\Desktop\Kaya\data"
-SATURATION_THRESHOLD = 65530 
+PULSE_PERIOD_S = 0.1 
 
 
 # ===================================================================
 # --- SECTION 3: HARDWARE & INSTALLATION SETTINGS ---
 # ===================================================================
-# (Parameters specific to your physical hardware setup)
+# (Parameters you don't normally change)
 
 # --- Rotator (Elliptec) ---
 MOTOR_COM_PORT = 'COM6' 
@@ -106,7 +92,6 @@ PAUSE_AFTER_MOVE_S = 0.5
 
 # --- Pulser (Sapphire) ---
 PULSER_COM_PORT = 'COM5'
-PULSE_PERIOD_S = 0.1 
 PULSE_VOLTAGE_V = 5.0
 
 # --- Spectrometer (Horiba) ---
@@ -118,6 +103,14 @@ CCD_PROG_ID = "JYCCD.JYMCD"
 # Unique IDs (configurable per LabSpec installation)
 MONO_UNIQUE_ID = "Mono1" 
 CCD_UNIQUE_ID = "CCD1" 
+
+# Saturation Threshold (hard limit)
+SATURATION_THRESHOLD = 65530 
+
+# --- Acquisition Settings (Using constants from SECTION 1) ---
+CHOSEN_SPIKE_FILTER_MODE = ACQ_SINGLE_SPIKE_REMOVING
+CHOSEN_DARK_SUB_MODE = ACQ_NO_DARK 
+DENOISER_FACTOR = 50.0 
 
 # Timeouts & Waits
 INIT_WAIT_TIME_S = 5.0 

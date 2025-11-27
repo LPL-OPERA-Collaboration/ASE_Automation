@@ -7,7 +7,7 @@ import math
 import analysis_config as analysis_config
 
 # =============================================================================
-#  STEP 1: ENERGY & POWER CALCULATION (ROBUST READER)
+#  STEP 1: ENERGY & POWER CALCULATION (FIXED MATH TYPES)
 # =============================================================================
 
 def get_calibration_curve(csv_path):
@@ -31,7 +31,7 @@ def get_calibration_curve(csv_path):
     return f
 
 def get_header_value(filepath, search_str):
-    """Scans the first 20 lines for a specific string (e.g. '# Angle (deg):')."""
+    """Scans the first 20 lines for a specific string."""
     try:
         with open(filepath, 'r', encoding='latin-1') as f:
             for _ in range(20):
@@ -44,23 +44,14 @@ def get_header_value(filepath, search_str):
     return None
 
 def find_file_universal(base_dir, keyword):
-    """
-    Scans directory for a file containing the keyword.
-    Prioritizes .csv, then .txt, then anything else.
-    """
+    """Scans directory for a file containing the keyword."""
     try:
         all_files = os.listdir(base_dir)
-        # filter for keyword
         candidates = [f for f in all_files if keyword.lower() in f.lower()]
-        
         if not candidates: return None
-        
         # Sort priority: CSV first, then TXT
-        # We achieve this by sorting based on extension
         candidates.sort(key=lambda f: 0 if f.endswith('.csv') else (1 if f.endswith('.txt') else 2))
-        
-        chosen = candidates[0]
-        return os.path.join(base_dir, chosen)
+        return os.path.join(base_dir, candidates[0])
     except: return None
 
 def calculate_spot_area_cm2():
@@ -78,8 +69,8 @@ def calculate_spot_area_cm2():
 
 def get_absorption_rate(file_path):
     """
-    ROBUST LOADER: Reads .txt, .csv, space, tab, or comma separated.
-    Calculates Absorption Rate (0-1) from OD spectrum.
+    ROBUST LOADER: Reads .txt or .csv.
+    Calculates Absorption Rate (0-1).
     """
     if not file_path or not os.path.exists(file_path):
         print("WARNING: No absorption file found. Assuming 0% absorption.")
@@ -88,32 +79,27 @@ def get_absorption_rate(file_path):
     print(f"Reading absorption from: {os.path.basename(file_path)}")
     try:
         # 1. Universal Read (Sniffs delimiter automatically)
-        # header=None ensures we read everything, then we clean it up
-        # comment='#' ignores standard comments
         df = pd.read_csv(file_path, sep=None, engine='python', comment='#', header=None)
         
-        # 2. Force Numeric (Handles text headers that weren't commented)
-        # Any cell that isn't a number becomes NaN
+        # 2. Force Numeric
         df = df.apply(pd.to_numeric, errors='coerce')
-        
-        # 3. Drop rows that contain NaN (e.g. text headers)
         df = df.dropna()
         
-        # 4. Extract Columns (Expects Col 0 = Wavelength, Col 1 = Absorbance)
         data = df.values
         if data.shape[1] < 2:
-            print("ERROR: Absorption file must have at least 2 columns (Wavelength, Value).")
+            print("ERROR: Absorption file must have 2 columns (Wavelength, Value).")
             return 0.0
             
         wavelengths, absorbances = data[:, 0], data[:, 1]
         
-        # 5. Find Target
+        # 3. Find Target Wavelength
         idx = np.argmin(np.abs(wavelengths - analysis_config.TARGET_WAVELENGTH))
         closest_wl = wavelengths[idx]
         abs_val = absorbances[idx]
         
-        # Rate = 1 - 10^(-OD)
-        rate = 1 - 10**(-abs_val)
+        # 4. Calculate Rate (FIXED: Force float math)
+        # We use 10.0 instead of 10 to ensure floating point calculation
+        rate = 1.0 - 10.0**(-float(abs_val))
         
         print(f"   -> Value at {closest_wl:.1f} nm: OD = {abs_val:.3f}")
         print(f"   -> Absorption Rate: {rate*100:.1f}%")
@@ -138,7 +124,7 @@ def main():
 
     # 1. Geometry & Ref Energy
     area_cm2 = calculate_spot_area_cm2()
-    E_ref = analysis_config.RAW_ENERGY_READ * (10 ** analysis_config.TODAYS_OD) * analysis_config.TRANSMISSION_LENS
+    E_ref = analysis_config.RAW_ENERGY_READ_NJ * (10 ** analysis_config.TODAYS_OD) * analysis_config.TRANSMISSION_LENS
     print(f"Ref Energy: {E_ref:.2f} nJ | Spot Area: {area_cm2:.2e} cm²")
 
     # 2. Calibration Curve
@@ -149,12 +135,11 @@ def main():
     trans_ref = calib_func(analysis_config.ANGLE_REF)
     scale_factor = E_ref / trans_ref 
 
-    # 3. Absorption (Robust Search)
+    # 3. Absorption
     abs_path = find_file_universal(analysis_config.BASE_DIR, analysis_config.ABSORPTION_KEYWORD)
     absorption_rate = get_absorption_rate(abs_path)
 
     # 4. Scan Files
-    # Note: We stick to .txt for spectra files as that is standard from spectrometers
     files = [f for f in os.listdir(analysis_config.DATA_DIR) 
              if 'spectrum' in f.lower() and f.endswith('.txt')]
     
@@ -199,7 +184,6 @@ def main():
     df['fluence_uJ_cm2'] = (df['absorbed_energy_nJ'] * 1e-3) / area_cm2
     
     # Power Density (W/cm²)
-    # Formula: (Fluence_uJ * 1e-6) / PulseWidth_s
     df['Power_Density_W_cm2'] = (df['fluence_uJ_cm2'] * 1e-6) / df['pulse_width_s']
     df['Power_Density_W_cm2'] = df['Power_Density_W_cm2'].fillna(0)
 

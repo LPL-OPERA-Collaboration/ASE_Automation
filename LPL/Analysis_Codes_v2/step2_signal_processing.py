@@ -7,7 +7,7 @@ import os
 import analysis_config as config
 
 # =============================================================================
-#  STEP 2: SIGNAL PROCESSING (SINGLE MASTER FILE)
+#  STEP 2: SIGNAL PROCESSING (SHOW INDEX NUMBERS)
 # =============================================================================
 
 # --- USER SETTINGS -----------------------------------------------------------
@@ -19,7 +19,7 @@ START_SMOOTHING_INDEX = 0
 
 # 2. NEW SETTINGS (Applied only to files >= START_SMOOTHING_INDEX)
 # This tag will be written into the CSV header.
-SMOOTH_WINDOW = 51
+SMOOTH_WINDOW = 91
 
 # 3. FILENAME (Fixed name so we can load it back next time)
 OUTPUT_FILENAME = "COMBINED_smoothed_spectra.csv"
@@ -194,14 +194,16 @@ def main():
                 # Titles & Colors
                 angle_val = base_labels[file_idx]
                 status_text = plot_titles[file_idx]
-                titles[k].set_text(f"{angle_val}°\n{status_text}")
+                
+                # [NEW] Show Index AND Angle
+                titles[k].set_text(f"#{file_idx} | {angle_val}°\n{status_text}")
                 
                 if "LOCKED" in status_text: color = 'blue'; lw = 1; alpha = 0.5
                 elif "NEW" in status_text: color = 'red'; lw = 2; alpha = 1.0
                 else: color = 'black'; lw=1; alpha=0.5
 
                 if file_idx == START_SMOOTHING_INDEX:
-                    titles[k].set_text(f"{angle_val}°\n>>> START NEW <<<")
+                    titles[k].set_text(f"#{file_idx} | {angle_val}°\n>>> START NEW <<<")
                     titles[k].set_fontweight('bold')
                     color = 'green'; lw = 3; alpha = 1.0
 

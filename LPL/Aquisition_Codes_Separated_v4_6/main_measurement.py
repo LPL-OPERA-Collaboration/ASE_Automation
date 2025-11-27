@@ -40,7 +40,7 @@ from aquisition_config import (
     START_ANGLE, END_ANGLE, NUM_POINTS, ACCUMULATIONS,
     CHOSEN_SPIKE_FILTER_MODE, CHOSEN_DARK_SUB_MODE, DENOISER_FACTOR,
     BASE_SAVE_DIRECTORY, SATURATION_THRESHOLD, INTEGRATION_TIME_PRESETS_S,
-    SATURATION_WARNING_THRESHOLD,
+    SATURATION_WARNING_THRESHOLD, PULSE_WIDTH_S,
     # Hardware/Installation Settings (Section 3)
     PAUSE_AFTER_MOVE_S
 )
@@ -484,6 +484,7 @@ class LabAutomation:
                 f"Angle (deg): {target_angle:.2f}",
                 f"Integration Time (s): {current_integ_time}", 
                 f"Accumulations: {ACCUMULATIONS}", 
+                f"Pulse Width (s): {PULSE_WIDTH_S}",
                 f"Denoised Signal ID: {signal_spectrum_id}",
                 f"Denoised Background ID: {bg_id_for_header}",
                 f"Denoiser Factor: {DENOISER_FACTOR}", 

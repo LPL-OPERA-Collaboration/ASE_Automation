@@ -56,13 +56,15 @@ MIRROR_SIDE = 3
 BASE_SAVE_DIRECTORY = r"C:\Users\Equipe_OPAL\Desktop\Kaya\data"
 
 # --- Scan & Sequence Parameters ---
-START_ANGLE = 85.0
+START_ANGLE = 85.0 
 END_ANGLE = 280.0
 NUM_POINTS = 50
 ACCUMULATIONS = 1
 
 # --- Smart Acquisition Parameters ---
 # A list of integration times (in seconds) to try, from longest to shortest.
+# The codes shift to the next value when th signal hits the SATURATION_WARNING_THRESHOLD defined below.
+# This presets can contain multiple values.
 INTEGRATION_TIME_PRESETS_S = [4.0, 0.1]
 
 # The "soft" threshold. If max counts are ABOVE this, we will
@@ -71,8 +73,9 @@ SATURATION_WARNING_THRESHOLD = 50000
 
 
 # --- Spectrometer Setup ---
-TARGET_GRATING_INDEX = 1 
-TARGET_WAVELENGTH_NM = 450.0 
+TARGET_GRATING_INDEX = 1    # grating number. You can check which number corresponds to which grating by running the main code.
+TARGET_WAVELENGTH_NM = 450.0    # center wavelength for aquisition
+
 
 # --- Pulser Setup ---
 PULSE_WIDTH_S = 5e-6 
@@ -87,27 +90,29 @@ PULSE_PERIOD_S = 0.1
 # --- Rotator (Elliptec) ---
 MOTOR_COM_PORT = 'COM6' 
 MOTOR_ADDRESS = '0' 
-MOTOR_TIMEOUT_S = 180 
-PAUSE_AFTER_MOVE_S = 0.5 
+MOTOR_TIMEOUT_S = 180   # "deadline" of the motor movement.
+PAUSE_AFTER_MOVE_S = 0.5    # pause after each movement to settle vibration
+
 
 # --- Pulser (Sapphire) ---
 PULSER_COM_PORT = 'COM5'
 PULSE_VOLTAGE_V = 5.0
 
+
 # --- Spectrometer (Horiba) ---
-# COM Object Program IDs (fixed)
+# COM Object Program IDs
 CTRL_PROG_ID = "NFACTIVEX.NFActiveXCtrl.1"
 MONO_PROG_ID = "jymono.monochromator"
 CCD_PROG_ID = "JYCCD.JYMCD"
 
-# Unique IDs (configurable per LabSpec installation)
+# Unique IDs
 MONO_UNIQUE_ID = "Mono1" 
 CCD_UNIQUE_ID = "CCD1" 
 
 # Saturation Threshold (hard limit)
 SATURATION_THRESHOLD = 65530 
 
-# --- Acquisition Settings (Using constants from SECTION 1) ---
+# Acquisition Settings (Using constants from SECTION 1)
 CHOSEN_SPIKE_FILTER_MODE = ACQ_SINGLE_SPIKE_REMOVING
 CHOSEN_DARK_SUB_MODE = ACQ_NO_DARK 
 DENOISER_FACTOR = 50.0 

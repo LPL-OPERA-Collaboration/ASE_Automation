@@ -9,14 +9,31 @@ import analysis_config as analysis_config
 # =============================================================================
 #  STEP 1: ENERGY & POWER CALCULATION (FIXED MATH TYPES)
 # =============================================================================
+#
+# INPUTS:
+# 1. Raw Spectrum Files (.txt) -> Extracts Angle & Pulse Width from headers.
+# 2. Calibration File (.csv)   -> Determines Transmission vs. Angle.
+# 3. Absorption File (.txt)    -> Determines how much light the sample actually absorbs.
+#
+# OUTPUTS:
+# - 'energies.csv': A "Manifest" file listing every filename alongside its 
+#   calculated physical properties (Fluence, Power Density, etc.).
+#
 
 def get_calibration_curve(csv_path):
-    """Loads calibration CSV (angle vs energy)."""
+    """
+    Loads calibration CSV (angle vs energy).
+
+    LOGIC:
+    The calibration file might be in arbitrary units (e.g., Volts, Counts).
+    We normalize the maximum value to 1.0 so it becomes a "Transmission %" curve.
+    We then scale this relative curve using the absolute Reference Energy defined in config.
+    """
     try:
         df = pd.read_csv(csv_path)
     except FileNotFoundError:
         raise FileNotFoundError(f"Calibration CSV not found: {csv_path}")
-
+    # Validation: Ensure columns exist
     if 'angle' not in df.columns or 'energy_corrected_J' not in df.columns:
         raise ValueError(f"CSV ERROR: {os.path.basename(csv_path)} needs 'angle' and 'energy_corrected_J'.")
 
@@ -25,7 +42,7 @@ def get_calibration_curve(csv_path):
     
     if max_energy == 0: raise ValueError("Max energy is 0.")
 
-    # Normalize max to 1.0
+    # Normalize max to 1.0 (0% to 100% transmission)
     normalized = df['energy_corrected_J'] / max_energy
     f = interp1d(df['angle'], normalized, kind='cubic', bounds_error=False, fill_value="extrapolate")
     return f
@@ -44,7 +61,11 @@ def get_header_value(filepath, search_str):
     return None
 
 def find_file_universal(base_dir, keyword):
-    """Scans directory for a file containing the keyword."""
+    """
+    Smart Search: Finds a file containing a keyword (e.g., "calibration") 
+    regardless of capitalization or exact filename.
+    Prioritizes .csv over .txt.
+    """
     try:
         all_files = os.listdir(base_dir)
         candidates = [f for f in all_files if keyword.lower() in f.lower()]
@@ -55,7 +76,10 @@ def find_file_universal(base_dir, keyword):
     except: return None
 
 def calculate_spot_area_cm2():
-    """Calculates spot area in cm2."""
+    """
+    Calculates the laser spot area based on the shape defined in Config.
+    Used for converting Energy (J) -> Fluence (J/cm²).
+    """
     shape = analysis_config.SPOT_SHAPE.lower()
     d1 = analysis_config.SPOT_DIM_1_UM
     d2 = analysis_config.SPOT_DIM_2_UM
@@ -69,8 +93,15 @@ def calculate_spot_area_cm2():
 
 def get_absorption_rate(file_path):
     """
-    ROBUST LOADER: Reads .txt or .csv.
-    Calculates Absorption Rate (0-1).
+    ROBUST LOADER for UV-Vis Absorption Data.
+    
+    PROBLEM: UV-Vis spectrometers export messy files (headers, different delimiters).
+    SOLUTION: We use a "smart read" that:
+    1. Sniffs the separator (comma, tab, space).
+    2. Ignores non-numeric headers.
+    3. Interpolates to find the exact OD at the Target Wavelength.
+    
+    Returns: Absorption Rate (0.0 to 1.0)
     """
     if not file_path or not os.path.exists(file_path):
         print("WARNING: No absorption file found. Assuming 0% absorption.")

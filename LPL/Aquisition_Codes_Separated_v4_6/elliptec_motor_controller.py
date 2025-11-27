@@ -8,18 +8,25 @@ from aquisition_config import (
 class ElliptecMotorController:
     """
     Controller class for the Thorlabs Elliptec (ELLO) rotation stage.
+
+    ARCHITECTURE:
+    This class wraps the 'elliptec' library. We manage two objects:
+    - 'controller': Represents the Serial Bus / USB Interface.
+    - 'rotator': Represents the specific motor connected to that bus (via Address).
     
     Encapsulates connection, homing, movement, and cleanup using the 
     'elliptec' library.
     """
     def __init__(self, logger):
         self.logger = logger
-        self.elliptec_controller = None
-        self.rotator = None
+        self.elliptec_controller = None # The Serial Port Manager
+        self.rotator = None             # The Motor Object
         self.connected = False
         
     def connect(self):
-        """Connects to the Elliptec motor via serial port."""
+        """
+        Establishes communication with the motor driver via serial port.
+        """
         self.logger.info(f"\n--- Connecting to Elliptec Motor on {MOTOR_COM_PORT} ---")
         try:
             # Use imported constants for connection

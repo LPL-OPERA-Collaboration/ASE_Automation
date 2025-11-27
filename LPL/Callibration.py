@@ -1,14 +1,10 @@
 """
-MASTER EXPERIMENT CONTROLLER (GLASS BOX VERSION)
+Wheel Callibration
 -------------------------------------------------------------------------
 Hardware:
   1. Thorlabs Elliptec (ELLO) Rotation Stage
   2. Quantum Composers Sapphire 9214 Pulse Generator
   3. Gentec MAESTRO Power Meter
-
-UPDATES (Integration Feature):
-  - Strict Filter Input: Operator MUST type '0', '1', or '3'.
-  - Auto-Correction: CSV now includes 'energy_corrected_J'.
 """
 
 import time
@@ -47,39 +43,41 @@ class Config:
     
     # --- Meta ---
     EXPERIMENT_NAME: str = "wheel_calibration"
+    # IMPORTANT: Use 'r' before the string to handle Windows backslashes correctly
     SAVE_DIRECTORY: str = r"C:\Users\Equipe_OPAL\Desktop\Kaya\gentec data"
 
     # --- Connectivity ---
-    PORT_MOTOR: str = 'COM6'
-    PORT_PULSER: str = 'COM5'
-    PORT_METER: str = 'COM7'
+    PORT_MOTOR: str = 'COM6'    # Thorlabs Elliptec
+    PORT_PULSER: str = 'COM5'   # Sapphire Generator
+    PORT_METER: str = 'COM7'    # Gentec Maestro
     
     # --- Hardware Settings ---
-    MOTOR_ADDR: str = '0'
-    MAESTRO_BAUD: int = 115200 
-    DETECTION_WAVELENGTH: int = 337
+    MOTOR_ADDR: str = '0'           # Standard address for single Elliptec motor
+    MAESTRO_BAUD: int = 115200      # Fixed baud rate for Gentec Serial
+    DETECTION_WAVELENGTH: int = 337 # nm (Used by Maestro)
     
     # --- Scan Logic ---
     START_ANGLE: float = 60.0
     END_ANGLE: float = 300.0
     STEP_ANGLE: float = 5.0
-    MOVE_SETTLE_TIME: float = 0.5
+    MOVE_SETTLE_TIME: float = 0.5   # Seconds to wait after motor stops moving
     
     # --- Laser/Pulse Logic ---
-    NUM_PULSES: int = 50
+    NUM_PULSES: int = 50            # How many shots to fire per measurement
     PULSE_RATE_HZ: float = 10.0
     PULSE_WIDTH_S: float = 5e-6
     PULSE_VOLTAGE_V: float = 5.0
     
     # --- Data Analysis ---
-    SKIP_FIRST_N: int = 5        
-    POWER_LIMIT_J: float = 60e-9 
-    MIN_PULSE_COUNT: int = 35    
-    STD_DEV_CUTOFF: float = 3.0  
+    SKIP_FIRST_N: int = 5           # Ignore first N pulses (often unstable)
+    POWER_LIMIT_J: float = 60e-9    # Safety limit: Pause if Energy > 60 nJ
+    MIN_PULSE_COUNT: int = 35       # If fewer pulses detected, assume laser misfire or bad detection
+    STD_DEV_CUTOFF: float = 3.0     # Statistical outlier removal (3 Sigma)
 
     # --- Filter Logic (Strict Validation) ---
     # Dictionary mapping User Input Key -> OD Value
-    # OD1 = 1.001, OD3 = 3.163 (Matches your config.py)
+    # Logic: If user types '3', we treat it as OD 3.163
+    # Used for calculating 'energy_corrected_J' at the end.
     VALID_FILTERS: Dict[str, float] = field(default_factory=lambda: {
         '0': 0.0,
         '1': 1.001,
@@ -88,6 +86,8 @@ class Config:
 
     @property
     def MAX_PULSE_COUNT(self) -> int:
+        # If the meter detects significantly more pulses than we fired,
+        # it is likely picking up electrical noise or ambient light.
         return self.NUM_PULSES + 10 
 
     @property
@@ -99,6 +99,7 @@ class Config:
         return self.pulse_period_s * self.NUM_PULSES
 
     def get_filename(self) -> str:
+        """Generates a unique filename based on time and scan settings."""
         timestamp_str = time.strftime("%Y%m%d_%H%M%S") 
         s = int(self.START_ANGLE) if self.START_ANGLE.is_integer() else self.START_ANGLE
         e = int(self.END_ANGLE) if self.END_ANGLE.is_integer() else self.END_ANGLE
@@ -111,6 +112,10 @@ class Config:
 # ============================================================================
 
 class ExperimentLogger:
+    """
+    A simple wrapper for 'print' that handles indentation levels.
+    Makes the console output easier to read during a long scan.
+    """
     def __init__(self):
         self.level = 0
         
@@ -147,6 +152,10 @@ log = ExperimentLogger()
 # ============================================================================
 
 class GentecMaestro:
+    """
+    Custom driver for the Gentec MAESTRO Power Meter.
+    Uses basic Serial commands based on the Gentec ASCII protocol.
+    """
     def __init__(self, port: str, baud: int, wavelength: int):
         log.info(f"Connecting to MAESTRO on {port}...")
         self.target_wavelength = wavelength
@@ -155,6 +164,7 @@ class GentecMaestro:
         self._setup_energy_mode()
 
     def _send(self, cmd: str) -> str:
+        """Sends a command to the meter and waits for a response."""
         self.ser.flushInput()
         # log.raw(f"[TX]: {cmd}") # Commented out to reduce noise
         self.ser.write((cmd + '\r').encode())
@@ -164,23 +174,28 @@ class GentecMaestro:
         return resp
 
     def _verify_connection(self):
+        """Asks the device for its version (*VER) to ensure it's listening."""
         resp = self._send("*VER")
         if not resp: raise ConnectionError("MAESTRO not responding.")
         log.info(f"MAESTRO Connected: {resp}")
 
     def _setup_energy_mode(self):
+        """Configures the meter for Energy measurement (Joules)."""
         self._send("*SSE1") 
         self._send(f"*PWC{int(self.target_wavelength):05d}")
         
     def start_stream(self):
+        """Tells the meter to start sending data points to the USB buffer."""
         self._send("*CSU") 
         self._send("*CAU") 
 
     def stop_stream(self):
+        """Stops the data stream."""
         self.ser.write(b'*CSU\r')
         time.sleep(0.1)
 
     def collect_stream_data(self) -> List[float]:
+        """Reads all data currently sitting in the Serial buffer."""
         data = []
         self.ser.timeout = 0.1 
         while True:
@@ -199,6 +214,14 @@ class GentecMaestro:
 
 
 class ExperimentHardware:
+    """
+    Context Manager for Hardware.
+    
+    NOTE:
+    Using the 'with ExperimentHardware() as hw:' pattern ensures that
+    __exit__ is ALWAYS called, even if the script crashes.
+    This guarantees the Laser is turned OFF and ports are released safely.
+    """
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.rotator = None
@@ -238,6 +261,7 @@ class ExperimentHardware:
             raise e
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup routine called automatically at end of 'with' block."""
         log.info("--- Closing Hardware Connections ---")
         if self.rotator: self.rotator.set_angle(0)
         if self.controller: self.controller.close_connection()
@@ -252,6 +276,14 @@ class ExperimentHardware:
 # ============================================================================
 
 class ExperimentController:
+    """
+    Orchestrates the experiment:
+    1. Moves Motor
+    2. Controls Laser firing
+    3. Reads Meter
+    4. Analyzes Data
+    5. Saves to CSV
+    """
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.results = []
@@ -259,7 +291,8 @@ class ExperimentController:
 
     def _get_valid_filter_input(self) -> str:
         """
-        Loops until the user enters a valid filter key defined in Config.
+        Forces the user to enter a key present in the Config.
+        Loops indefinitely until a valid key ('0', '1', '3') is entered.
         """
         valid_keys = list(self.cfg.VALID_FILTERS.keys())
         prompt = f"Enter Filter ID {valid_keys} (0=None, 1=OD1, 3=OD3): "
@@ -271,20 +304,38 @@ class ExperimentController:
             log.warning(f"Invalid input '{choice}'. You MUST enter one of: {valid_keys}")
 
     def acquire_data_point(self, hw: ExperimentHardware) -> Tuple[float, int, int]:
-        hw.meter.start_stream()
         
+        """
+        Synchronizes the measurement sequence.
+        Returns: (Average Energy, Total Pulses Detected, Valid Pulses Used)
+        """
+        # 1. Start listening to the power meter
+        hw.meter.start_stream()
+
+        # 2. Fire the laser burst
         log.info(f"Firing {self.cfg.NUM_PULSES} pulses...")
         hw.pulser.channel('A').state(1)
         hw.pulser.system.state(1)
+        # Wait for the exact duration of the pulse train + buffer
         time.sleep(self.cfg.burst_duration_s + 0.25)
+
         hw.pulser.system.state(0)
         hw.pulser.channel('A').state(0)
-        
+
+        # 3. Stop listening and download data
         hw.meter.stop_stream()
         raw_data = hw.meter.collect_stream_data()
+
+        # 4. Calculate statistics
         return self._analyze(raw_data)
 
     def _analyze(self, data: List[float]) -> Tuple[float, int, int]:
+        """
+        Statistical Processing:
+        1. Skips first N pulses (instability).
+        2. Calculates Median and Standard Deviation.
+        3. Removes outliers outside of median +/- (3 * Sigma).
+        """
         count = len(data)
         if count <= self.cfg.SKIP_FIRST_N: return 0.0, count, 0
             
@@ -298,7 +349,7 @@ class ExperimentController:
         return np.mean(clean_data), count, len(clean_data)
 
     def run(self):
-        # Initial Setup Prompt
+        """Main Experiment Loop."""
         log.info("Select STARTING filter.")
         self.current_filter_key = self._get_valid_filter_input()
         
@@ -364,10 +415,12 @@ class ExperimentController:
             self._save_data()
 
     def _handle_filter_change(self, angle):
+        """Pauses execution and demands a valid filter input from user."""
         log.info(f"PAUSED at Angle {angle:.2f}. Change filter now.")
         self.current_filter_key = self._get_valid_filter_input()
 
     def _save_data(self):
+        """Compiles results, applies mathematical corrections, and saves CSV."""
         if not self.results:
             log.warning("No data to save.")
             return
@@ -377,12 +430,13 @@ class ExperimentController:
         # --- AUTO CORRECTION LOGIC ---
         log.info("Applying OD Corrections...")
         
-        # 1. Lookup OD Value
+        # 1. Lookup OD Value based on the user's input key
         # df['filter_id'] contains '0', '1', '3'
         # We map these to actual OD values using the config dictionary
         df['od_value'] = df['filter_id'].map(self.cfg.VALID_FILTERS)
         
         # 2. Calculate Correction Factor: 10^(OD)
+        # Example: OD 1 = 10x attenuation, so we multiply read energy by 10.
         df['correction_factor'] = 10 ** df['od_value']
         
         # 3. Calculate Corrected Energy
@@ -408,7 +462,7 @@ class ExperimentController:
 
 if __name__ == "__main__":
     print("\n========================================")
-    print("   AUTOMATED ANGLE SCAN (STRICT MODE)")
+    print("   AUTOMATED ANGLE SCAN   ")
     print("========================================")
     
     try:

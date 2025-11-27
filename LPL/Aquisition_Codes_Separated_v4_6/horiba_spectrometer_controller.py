@@ -18,11 +18,16 @@ from aquisition_config import (
 
 class HoribaSpectrometerController:
     """
-    Controller class to control the Horiba LabSpec 6 Spectrometer via its 
-    ActiveX, JYMono, and JYCCD COM objects.
+    Controller class to control the Horiba Spectrometer.
     
-    All spectrometer-specific logic and COM object management are 
-    encapsulated here.
+    ARCHITECTURE NOTE:
+    Horiba automation uses ActiveX (COM) objects. We interact with three objects:
+    1. LabSpec ActiveX (The main application interface).
+    2. JYMono (The physical Monochromator hardware).
+    3. JYCCD (The physical Detector/CCD hardware).
+    
+    IMPORTANT: The LabSpec 6 GUI must be CLOSED before running this script, 
+    otherwise Windows will fail to dispatch these COM objects correctly.
     """
     def __init__(self, logger):
         # --- Hardware Objects ---
@@ -44,6 +49,13 @@ class HoribaSpectrometerController:
 
     def _wait_for_mono_ready(self, timeout=180):
         """Waits for the monochromator to be not busy AND ready."""
+        """
+        Blocking loop that waits for the Monochromator to finish moving.
+        
+        COM RETURN NOTE: 
+        ActiveX methods often return a tuple (Value, Status) or just (Value).
+        We check 'isinstance' to handle both cases safely.
+        """
         self.logger.info(f"      Waiting for Monochromator (timeout {timeout}s)...")
         start_time = time.time()
 
@@ -67,6 +79,10 @@ class HoribaSpectrometerController:
         raise Exception(f"Monochromator wait timed out after {timeout}s.")
 
     def _connect_labspec(self):
+        """
+        Connects to the main LabSpec automation server.
+        This object handles the high-level 'Acquire' and 'Save' commands.
+        """
         self.logger.info(f"\n--- Connecting to LabSpec ActiveX ({CTRL_PROG_ID}) ---")
         self.logger.info("(Remember: LabSpec GUI must be CLOSED)")
         self.labspec_activex = win32com.client.Dispatch(CTRL_PROG_ID)
@@ -75,6 +91,10 @@ class HoribaSpectrometerController:
         self.logger.info("LabSpec ActiveX initialized.")
 
     def _connect_ccd(self):
+        """
+        Connects to the CCD (Detector) specifically.
+        We need this separate connection to control Temperature and Integration settings directly.
+        """
         self.logger.info(f"\n--- Connecting & Initializing CCD Controller ({CCD_PROG_ID}) ---")
         try:
             self.ccd_controller = win32com.client.Dispatch(CCD_PROG_ID)
@@ -150,6 +170,10 @@ class HoribaSpectrometerController:
 
 
     def _connect_mono(self):
+        """
+        Connects to the Monochromator (Grating/Mirror Turrets).
+        This controls the motors in the monochrometer
+        """
         self.logger.info(f"\n--- Connecting & Initializing Monochromator ({MONO_PROG_ID}) ---")
         try:
             self.mono_controller = win32com.client.Dispatch(MONO_PROG_ID)
@@ -190,7 +214,10 @@ class HoribaSpectrometerController:
     # ===================================================================
 
     def setup_spectrometer_state(self):
-        """Sets the initial state of the monochromator (grating, mirror, etc.)."""
+        """
+        Configures initial state of the monochromator
+        Sets Units -> Grating -> Mirrors -> Target Wavelength.
+        """
         if not self.mono_init_ok:
             raise Exception("Cannot set spectrometer state, Monochromator not initialized.")
 
@@ -221,7 +248,14 @@ class HoribaSpectrometerController:
         self.logger.info("Spectrometer state is set.")
     
     def _report_grating_details(self):
-        """Internal helper for 5.2 Grating Report."""
+        """
+        Internal helper for 5.2 Grating Report.
+        
+        NOTE:
+        'GetCurrentGratingWithDetails()' returns a complex tuple structure:
+        (CurrentDensity, [List of Densities], [List of Blazes], [List of Descriptions])
+        We parse this to log exactly what hardware is installed.
+        """
         try:
             self.logger.info("\n   --- Monochromator Grating Report ---")
             grating_details = self.mono_controller.GetCurrentGratingWithDetails()
@@ -243,7 +277,11 @@ class HoribaSpectrometerController:
             self.logger.warning(f"      *** WARNING: Could not generate grating report: {e_grating_report} ***")
 
     def _move_grating(self, target_index):
-        """Internal helper for 5.3 Grating move."""
+        """
+        Internal helper for 5.3 Grating move.
+        Optimizes the process by checking the current position first 
+        to avoid unnecessary mechanical movement.
+        """
         self.logger.info(f"   Checking current grating position...")
         try:
             current_grating_ret = self.mono_controller.GetCurrentTurret()
@@ -261,7 +299,10 @@ class HoribaSpectrometerController:
             self.logger.warning(f"      *** WARNING: Could not check/move grating: {e_grating} ***")
 
     def _move_entrance_mirror(self, target_position):
-        """Internal helper for 5.4 Mirror move."""
+        """
+        Internal helper for 5.4 Mirror move.
+        Switches between Front (Standard) and Side (Fiber/Lateral) entrance ports.
+        """
         self.logger.info(f"   Checking current entrance mirror position...")
         try:
             current_mirror_ret = self.mono_controller.GetCurrentMirrorPosition(MIRROR_ENTRANCE)
@@ -286,6 +327,18 @@ class HoribaSpectrometerController:
 
     def _wait_for_acq_id(self, current_integ_time, current_accum, acq_mode, timeout_buffer=30):
         """Waits for LabSpec to return a valid (positive) Acquisition ID."""
+        """
+        POLLING LOOP for Acquisition Completion.
+        
+        The LabSpec 'Acq()' command is ASYNCHRONOUS (non-blocking). It returns immediately.
+        We must continually poll 'GetAcqID()' to see if the data is actually ready.
+        
+        RETURN CODES of GetAcqID():
+        > 0 : Success. This is the new Spectrum ID (Memory Handle).
+          0 : Busy. Acquisition is currently in progress.
+         -1 : Idle / Waiting.
+         -2 : Error / Cancelled by user.
+        """
         num_acquisitions = 1 
         
         expected_acq_time = (current_integ_time * current_accum) * num_acquisitions
@@ -323,7 +376,13 @@ class HoribaSpectrometerController:
 
     def acquire_frame(self, integration_time_s, accumulations, is_signal_frame=True, auto_show=False, spike_filter_mode=ACQ_SINGLE_SPIKE_REMOVING, dark_sub_mode=ACQ_NO_DARK):
         """
-        Starts an acquisition in LabSpec and waits for the Spectrum ID.
+        Main Public Method to take a measurement.
+        
+        LOGIC FLOW:
+        1. Configures the 'DisplayUnit' (only needed for the visible live window).
+        2. Calculates the 'Acquisition Mode' integer (a sum of bit-flags).
+        3. Calls the asynchronous Acq().
+        4. Blocks and waits for the Result ID using _wait_for_acq_id().
         """
         
         self.logger.info(f"   Starting {'SIGNAL' if is_signal_frame else 'BACKGROUND'} Frame ({integration_time_s}s x {accumulations} accum)...")
@@ -346,7 +405,7 @@ class HoribaSpectrometerController:
         return spectrum_id
 
     def get_raw_data(self, spectrum_id):
-        """Retrieves raw data array from a Spectrum ID for saturation check."""
+        """Retrieves raw data array from a Spectrum ID"""
         y_com = self.labspec_activex.GetValue(spectrum_id, "Data")
         y_raw = y_com[-1] if isinstance(y_com, tuple) else y_com
         
@@ -357,8 +416,8 @@ class HoribaSpectrometerController:
 
     def get_axis(self, spectrum_id):
         """
-        Retrieves the X-axis (Wavelength) data array for a given Spectrum ID.
-        NEW: Added to robustly get X-axis when background ID is invalid/cached.
+        Retrieves the X-Axis (Wavelength) from memory.
+        Must be called separately from 'Data'.
         """
         x_com = self.labspec_activex.GetValue(spectrum_id, "Axis")
         x_raw = x_com[-1] if isinstance(x_com, tuple) else x_com
@@ -369,7 +428,12 @@ class HoribaSpectrometerController:
         return np.array(x_raw)
 
     def apply_denoiser(self, spectrum_id, denoiser_factor):
-        """Applies the Denoiser treatment to a spectrum ID."""
+        """
+        Applies the LabSpec 'Denoiser' filter IN-PLACE to the spectrum in memory.
+        
+        NOTE: This modifies the data at 'spectrum_id'. If you call get_raw_data()
+        AFTER this, you will get the denoised data.
+        """
         if denoiser_factor > 0:
             self.logger.info(f"   Applying Denoiser (Factor: {denoiser_factor}) to ID {spectrum_id}...")
             try:
@@ -413,7 +477,10 @@ class HoribaSpectrometerController:
 
 
     def save_tsf_file(self, spectrum_id, full_tsf_path):
-        """Saves a TSF file for a given Spectrum ID."""
+        """
+        Saves the spectrum in Horiba's native format (.tsf).
+        This format preserves metadata (gratings, temperature, date) that .txt loses.
+        """
         self.logger.info(f"   Saving TSF for ID {spectrum_id} to: {full_tsf_path}")
         save_result_ret = self.labspec_activex.Save(spectrum_id, full_tsf_path, "")
         save_result = int(save_result_ret[-1]) if isinstance(save_result_ret, (tuple, list)) else int(save_result_ret)
@@ -423,7 +490,11 @@ class HoribaSpectrometerController:
         return True
         
     def remove_spectrum(self, spectrum_id):
-        """Removes a spectrum from LabSpec memory."""
+        """
+        MEMORY MANAGEMENT.
+        LabSpec keeps every acquired spectrum in RAM until explicitly removed.
+        If we don't call this, LabSpec will crash evetually (probably?).
+        """
         if spectrum_id > 0:
             self.logger.debug(f"   Cleaning up spectrum ID {spectrum_id} from memory.")
             self.labspec_activex.Exec(spectrum_id, 2, 0) # 2 = REMOVE_DATA
@@ -433,7 +504,10 @@ class HoribaSpectrometerController:
     # ===================================================================
 
     def close_communications(self):
-        """Closes all COM object communications and releases objects."""
+        """
+        Closes all COM object communications and releases objects.
+        This allows other software (or the LabSpec GUI) to use the hardware later.
+        """
         self.logger.info("\n--- Cleaning up Spectrometer COM connections ---")
 
         # --- Close Monochromator ---

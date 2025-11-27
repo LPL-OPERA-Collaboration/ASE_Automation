@@ -4,15 +4,10 @@ Master Python script to control:
 2. Quantum Composers Sapphire 9214 Pulse Generator (via 'sapphire_pulser_controller' module)
 3. Horiba LabSpec 6 Spectrometer (via 'horiba_spectrometer_controller' module)
 
-This script performs a 50-point LINEAR angle scan. At each angle,
-it uses a SMART STEP-DOWN ACQUISITION with BACKGROUND CACHING:
-1. Starts acquisition at the last known non-saturating integration time.
-2. If saturated, steps down the integration time until successful.
-3. Acquires a "Signal" frame.
-4. Checks if a "Background" for this integration time is in CACHE.
-   - If YES: Reuses cached data (Fast).
-   - If NO: Acquires new background and caches it (Slow).
-5. Subtracts, saves data, and plots in real-time.
+ARCHITECTURE NOTE:
+This script acts as the "Orchestrator". It does not know *how* to talk to the hardware
+(that logic is hidden in the controller files). It only knows *when* to talk to them.
+It manages the experiment logic: Angles -> Integration Times -> Save Data.
 
 *** IMPORTANT ***
 - You MUST run this script *with the visible LabSpec 6 application CLOSED*.
@@ -23,11 +18,11 @@ import time
 import numpy as np
 import sys
 import os
-import signal
-import shutil
-import logging
+import signal       # Used to capture Ctrl+C events for safe shutdown
+import shutil       # Used for copying files (Code Snapshot)
+import logging      # Used for creating the .log audit trail
 import matplotlib.pyplot as plt
-import threading # Added for clean shutdown handling
+import threading    # Used for thread-safe flags (Shutdown Event)
 
 # --- Import Controllers ---
 from horiba_spectrometer_controller import HoribaSpectrometerController 
@@ -35,6 +30,7 @@ from sapphire_pulser_controller import SapphirePulserController
 from elliptec_motor_controller import ElliptecMotorController
 
 # --- Import All Configuration Constants ---
+# We import specific variables so the code below is readable (e.g., using 'START_ANGLE' instead of 'config.START_ANGLE')
 from aquisition_config import (
     # Experiment Parameters (Section 2)
     START_ANGLE, END_ANGLE, NUM_POINTS, ACCUMULATIONS,
@@ -87,7 +83,14 @@ class LabAutomation:
         self.log_stream_handler = None
 
     def _handle_shutdown(self, sig, frame):
-        """Signal handler for Ctrl+C (SIGINT)."""
+        """
+        Signal handler for Ctrl+C (SIGINT).
+        
+        SAFETY FEATURE:
+        If you press Ctrl+C, Python normally kills the script instantly.
+        This is bad because it might leave the Laser ON or the Motor moving.
+        This function catches that signal and sets a flag so we can exit GRACEFULLY.
+        """
         if self.shutdown_requested:
             self.logger.critical("\n--- FORCE EXIT (SECOND CTRL+C). MAY LEAVE HARDWARE IN BAD STATE. ---")
             sys.exit(1)
@@ -99,7 +102,14 @@ class LabAutomation:
         self.shutdown_event.set() 
 
     def _setup_logging(self):
-        """Sets up the logger to print to console and a log file."""
+        """
+        Sets up the logger to print to console AND a log file.
+        
+        WHY LOGGING?
+        If an experiment runs overnight and fails, the print() statements are gone.
+        The .log file saved in the data folder provides a permanent record of 
+        exactly what happened (timestamps, errors, values).
+        """
         try:
             self.logger = logging.getLogger('LabAutomation')
             self.logger.setLevel(logging.INFO)
@@ -147,7 +157,15 @@ class LabAutomation:
 
 
     def _save_code_snapshot(self):
-        """Creates a timestamped folder and copies source code into it."""
+        """
+        REPRODUCIBILITY FEATURE.
+        
+        Every time you run a measurement, this function creates a folder 
+        inside your data directory and copies the *current version* of the python code into it.
+        
+        Why? Six months from now, when you analyze this data, you will know EXACTLY 
+        what logic produced it, even if you changed the code 50 times since then.
+        """
         files_to_snapshot = [
             "main_measurement.py", 
             "experiment_config.py",
@@ -182,7 +200,10 @@ class LabAutomation:
 
 
     def _create_measurement_dir(self):
-        """Finds and creates a unique measurement directory for this run."""
+        """
+        Finds and creates a unique measurement directory for this run.
+        It auto-increments (Measurement_1, Measurement_2...) to prevent overwriting data.
+        """
         print(f"Ensuring base save directory exists: {BASE_SAVE_DIRECTORY}")
         os.makedirs(BASE_SAVE_DIRECTORY, exist_ok=True)
         
@@ -285,8 +306,21 @@ class LabAutomation:
 
     def _run_single_point(self, angle, i, total_points):
         """
-        Moves, acquires, and saves data for a single angle using the 
-        Smart Step-Down Acquisition logic AND Background Caching.
+        The "Brain" of the experiment.
+        Moves to one angle, determines the correct exposure time, acquires data, 
+        processes it, and saves it.
+        
+        ALGORITHM: "Smart Step-Down with Caching"
+        1. Move Motor.
+        2. Guess the best integration time (based on the previous successful angle).
+        3. Acquire Signal.
+           - If SATURATED: Discard, pick the next shorter time, and retry.
+           - If GOOD: Proceed.
+        4. Get Background.
+           - Check Cache: Do we already have a background for this time?
+             - YES: Use it (Fast).
+             - NO: Turn laser OFF, acquire new background, store in cache (Slow).
+        5. Subtract -> Denoise -> Save -> Plot.
         """
         
         target_angle = round(angle, 2)
@@ -609,7 +643,10 @@ class LabAutomation:
             print("\nPython script finished.")
 
     def run(self):
-        """Main entry point for the automation script."""
+        """
+        Main Entry Point.
+        Wraps the entire execution in a Try/Finally block to guarantee cleanup.
+        """
         
         try:
             self._create_measurement_dir()

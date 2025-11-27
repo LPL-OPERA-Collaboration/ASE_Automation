@@ -10,6 +10,13 @@ class SapphirePulserController:
     Controller class to control the Quantum Composers Sapphire 9214 Pulse Generator 
     via the 'qcsapphire' library.
     
+    - Channel A: Connected to the Laser Trigger input.
+    - Channels B/C/D: Unused (and explicitly disabled).
+    
+    LOGIC:
+    The controller sets up a continuous pulse train (Period/Width), but keeps
+    the "System Output" disabled until the main script calls set_state(1).
+
     Encapsulates initialization, configuration, and state control.
     """
     def __init__(self, logger):

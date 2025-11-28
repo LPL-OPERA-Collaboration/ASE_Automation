@@ -9,6 +9,7 @@ Feel free to contact me if you have any questions or need assistance.
 Dear next editor,
 - The aquisition code does not stop firing the laser after each angle's acquisition. To protect the sample from being exposed to the laser for a long time, you can modify the code to stop the laser after each angle's acquisition until the next angle.
 - The FWHM logic in the analysis code is rather simple. You can implement a more advanced FWHM calculation methods (like Sebastien Chenais's normalized integrated intensity decrease method).
+- The codes use "absorption_rate" as a term for (1 - transmission). This sounds a bit weird, so you can change it to "absorption" or "absorptance".
 
 
 

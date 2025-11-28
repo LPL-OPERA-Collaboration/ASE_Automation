@@ -2,7 +2,15 @@
 
 ## Contact Info
 Initial Editor: Yusei Kaya (y-kaya@opera.kyushu-u.ac.jp)
+Feel free to contact me if you have any questions or need assistance.
 (dear editors, please update this section)
+
+## Editor's Note
+Dear next editor,
+- The aquisition code does not stop firing the laser after each angle's acquisition. To protect the sample from being exposed to the laser for a long time, you can modify the code to stop the laser after each angle's acquisition until the next angle.
+- The FWHM logic in the analysis code is rather simple. You can implement a more advanced FWHM calculation methods (like Sebastien Chenais's normalized integrated intensity decrease method).
+
+
 
 ## Introduction
 This manual provides a comprehensive guide to using the ASE Automation System. The system consists of two main parts:
@@ -101,10 +109,10 @@ Ensure all devices are connected and powered on:
 -   **Elliptec Motor**: USB connected.
 -   **Excitation Laser**: Turn on the laser source.
 
-> [!NOTE]
-> **Pre-run Check**: This code expects that the sample is already aligned.
-> Ensure that the output signal **does not saturate** at the lowest filtering region of the filter wheel.
+> [!NOTE] **Pre-run Check**
 > Please perform these checks manually (the "classic way") before running this automated code.
+> - Alignment: this code expects that the sample and the detector are already aligned.
+> - Saturation: Ensure that the output signal **does not saturate** at the lowest filtering (highest transmission) region of the filter wheel.
 
 
 ### 2. Configuration
@@ -345,7 +353,7 @@ This script requires a different hardware configuration than the main acquisitio
 3.  **Gentec Power Meter**: Connected via USB (COM Port).
 
 ### 2. Configuration
-Open `LPL/Calibration.py` (root directory) and check the `Config` class at the top:
+Open `LPL/Wheel_Calibration.py` (root directory) and check the `Config` class at the top:
 
 ```python
 @dataclass
@@ -366,7 +374,7 @@ class Config:
 > **Gentec Sensitivity**: If the signal is out of range (saturated or too low), you may need to **manually change the sensitivity range** on the Gentec Maestro tablet/software. The "Auto" mode does not always work reliably.
 
 ### 3. Running the Calibration
-1.  Open `Calibration.py` in VS Code.
+1.  Open `Wheel_Calibration.py` in VS Code.
 2.  Run the script.
 3.  **Follow the Console Prompts**:
     *   **Select Filter**: The script will ask which ND filter is currently mounted before the Gentec meter. (e.g., `0` for None, `1` for OD1).

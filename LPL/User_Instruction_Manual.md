@@ -89,7 +89,8 @@ LPL/
 │   ├── step2_signal_processing.py  # Step 2: Smoothing & Filtering
 │   └── step3_spectrum_analysis.py  # Step 3: Physics & Thresholds
 │
-└── file_location_memo.py           # Helper file for path references
+├── User_Instruction_Manual.md      # <--- THIS MANUAL
+└── Wheel_Calibration.py            # [PART 3] Calibration of Filter Wheel
 ```
 
 ---

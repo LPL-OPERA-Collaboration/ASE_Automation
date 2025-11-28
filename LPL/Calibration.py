@@ -1,5 +1,5 @@
 """
-Wheel Callibration
+Wheel Calibration
 -------------------------------------------------------------------------
 Hardware:
   1. Thorlabs Elliptec (ELLO) Rotation Stage

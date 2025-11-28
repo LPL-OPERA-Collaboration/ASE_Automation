@@ -1,5 +1,9 @@
 # User Instruction Manual: ASE Automation System (LPL version)
 
+## Contact Info
+Initial Editor: Yusei Kaya (y-kaya@opera.kyushu-u.ac.jp)
+(dear editors, please update this section)
+
 ## Introduction
 This manual provides a comprehensive guide to using the ASE Automation System. The system consists of two main parts:
 1.  **Acquisition Codes (v4_6)**: Controls the hardware (Spectrometer, Motor, Pulser) to acquire data.
@@ -30,7 +34,7 @@ The system uses a specific folder structure for data organization.
 ```
 Kaya/
 │
-├── gentec data/                           <-- OUTPUT of Callibration (Step0)
+├── gentec data/                           <-- OUTPUT of Calibration (Step0)
 │   └── 20251126_..._calibration.csv       (Source File)
 │       [ACTION]: You must COPY this file manually to the daily folder below.
 │
@@ -217,6 +221,7 @@ The analysis codes are designed to be run **sequentially**, as the output of one
 **Required Files**
 Before analyzing, place these files in the measurement directory:
 -   **Calibration File**: A `.csv` file with the angle-dependent transmission curve (keyword: `calibration`).
+    Copy and paste the file from its source folder (e.g., r"C:\Users\...\gentec data")
 -   **Absorption File**: A `.txt` file with the sample's absorption spectrum (keyword: `absorption`).
 
 > [!NOTE]
@@ -322,3 +327,66 @@ After running all steps, your measurement folder will look like this:
 │   └── Plot_Spectra_Unnormalized.png (Step 3 Plot)
 └── Used_Analysis_Codes_.../       (Snapshot of analysis codes, if generated)
 ```
+
+---
+
+## Part 3: Wheel Calibration (Periodic Maintenance)
+
+> [!IMPORTANT]
+> **Frequency**: This procedure only needs to be performed **once a month** or when the optical setup (alignment, laser power) changes significantly.
+
+### Purpose
+The goal is to generate the **Calibration File** (`.csv`) used in Part 2 (Analysis). This file maps the **Filter Wheel Angle** to the **Transmission (Energy)**.
+
+### 1. Hardware Setup
+This script requires a different hardware configuration than the main acquisition:
+1.  **Elliptec Motor**: Connected (for rotating the wheel).
+2.  **Pulse Generator**: Connected (for triggering the laser).
+3.  **Gentec Power Meter**: Connected via USB (COM Port).
+
+### 2. Configuration
+Open `LPL/Calibration.py` (root directory) and check the `Config` class at the top:
+
+```python
+@dataclass
+class Config:
+    # ...
+    SAVE_DIRECTORY: str = r"C:\Users\...\gentec data"
+    
+    # Scan Settings
+    START_ANGLE: float = 60.0
+    END_ANGLE: float = 300.0
+    STEP_ANGLE: float = 5.0
+    
+    # Laser Settings
+    NUM_PULSES: int = 50        # Shots per angle
+```
+
+> [!NOTE]
+> **Gentec Sensitivity**: If the signal is out of range (saturated or too low), you may need to **manually change the sensitivity range** on the Gentec Maestro tablet/software. The "Auto" mode does not always work reliably.
+
+### 3. Running the Calibration
+1.  Open `Calibration.py` in VS Code.
+2.  Run the script.
+3.  **Follow the Console Prompts**:
+    *   **Select Filter**: The script will ask which ND filter is currently mounted before the Gentec meter. (e.g., `0` for None, `1` for OD1).
+    *   **Automatic Scan**: The motor will rotate, fire the laser, and record energy.
+    *   **Saturation/Filter Change**:
+        *   If the energy exceeds `POWER_LIMIT_J`, the script will **PAUSE**.
+        *   It will ask you to change the filter (manually add/remove ND filter on the meter).
+        *   Enter the new Filter ID in the console to continue.
+    *   **Pulse Count Warnings**:
+        *   **Too Few Pulses**: Indicates the laser might not be firing or the trigger is missed. The script will pause and ask you to retry.
+        *   **Too Many Pulses**: Indicates the laser is so weak that the gentec is reading electrical noise or ambient light as pulses. The script will pause and ask you to retry.
+
+
+### 4. Output
+The script saves a `.csv` file in the `SAVE_DIRECTORY` (e.g., `gentec data/`):
+*   **Filename**: `YYYYMMDD_HHMMSS_wheel_calibration_... .csv`
+*   **Columns**:
+    *   `angle`: The wheel angle.
+    *   `energy_J`: Raw energy measured.
+    *   `energy_corrected_J`: Energy corrected for the ND filter used (this is the value used for the transmission curve).
+
+> [!TIP]
+> **Post-Calibration**: Copy this generated `.csv` file into your daily measurement folder and make sure to include the keyword `calibration` in the filename so `step1_energy_calc.py` can find it.

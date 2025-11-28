@@ -86,7 +86,8 @@ TARGET_WAVELENGTH_NM = 450.0    # center wavelength for aquisition
 
 
 # --- Pulser Setup ---
-PULSE_WIDTH_S = 5e-6    # Pulse width in seconds
+PULSER_PULSE_WIDTH_S = 5e-6    # Pulse width in seconds
+# NOTE: this is the pulse width of the pulse generator, not the actual pulse width of the laser (3 ns for N2 laser).
 PULSE_PERIOD_S = 0.1    # Period between pulses (10Hz = 0.1s)
 
 # Acquisition Settings (Using constants from SECTION 1)

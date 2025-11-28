@@ -2,7 +2,7 @@ import qcsapphire
 import time
 import logging
 from aquisition_config import (
-    PULSER_COM_PORT, PULSE_PERIOD_S, PULSE_WIDTH_S, PULSE_VOLTAGE_V
+    PULSER_COM_PORT, PULSE_PERIOD_S, PULSER_PULSE_WIDTH_S, PULSE_VOLTAGE_V
 )
 
 class SapphirePulserController:
@@ -43,7 +43,7 @@ class SapphirePulserController:
             
             ch_A = self.pulser.channel('A')
             ch_A.mode('normal')
-            ch_A.width(PULSE_WIDTH_S)
+            ch_A.width(PULSER_PULSE_WIDTH_S)
             ch_A.delay(0)
             self.pulser.query(f':PULSE1:OUTPut:AMPLitude {PULSE_VOLTAGE_V}')
             

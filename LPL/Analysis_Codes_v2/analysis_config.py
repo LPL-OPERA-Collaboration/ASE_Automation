@@ -34,16 +34,18 @@ CALIBRATION_KEYWORD = "calibration" # The angle-dependent transmission curve
 ABSORPTION_KEYWORD = "absorption"
 
 
-# 3. EXPERIMENT VARIABLES
+# 3. EXPERIMENT VARIABLES & CONSTANTS
 ANGLE_REF = 245         # The angle where you measured the reference energy (usually the max transmission angle).
 RAW_ENERGY_READ_NJ = 24 # Raw energy value you read at ANGLE_REF in Gentec meter (in nJ).
 TODAYS_OD = OD3         # Which filter was on the Power Meter when you read the value above?
                         # Choose from the constants defined in Section 1 (e.g., OD1, OD3, NO_OD).
 TARGET_WAVELENGTH = 337 # The wavelelength to read on the absorption spectrum. 337 nm for N2 laser.
+LASER_PULSE_WIDTH_S = 3e-9 # Laser pulse width in seconds (e.g. 3 ns) 
+# NOTE: this is the pulse width of the laser (constant), not the pulse of the pulse generator.
 
 # 4. GEOMETRY
-# Shape options: "rectangle" (for slit/ASE), "circle", or "ellipse"
 SPOT_SHAPE = "rectangle"    # Beam shape of excitation laser (normally "rectangle" for ASE measurements)
+# Shape options: "rectangle" (for slit/ASE), "circle", or "ellipse"
 SPOT_DIM_1_UM = 4000.0      
 SPOT_DIM_2_UM = 500.0
 # DEFINITIONS:

@@ -5,6 +5,7 @@ from scipy.interpolate import interp1d
 import os
 import math
 import analysis_config as analysis_config
+from analysis_config import LASER_PULSE_WIDTH_S
 
 # =============================================================================
 #  STEP 1: ENERGY & POWER CALCULATION (FIXED MATH TYPES)
@@ -185,18 +186,12 @@ def main():
         # A. Get Angle
         angle = get_header_value(full_path, "Angle (deg):")
         
-        # B. Get Pulse Width
-        pulse_width = get_header_value(full_path, "Pulse Width (s):")
+        # B. Get Pulse Width (FROM CONFIG)
+        laser_pulse_width = LASER_PULSE_WIDTH_S
         
         if angle is not None:
             entry = {'filename': f, 'angle': angle}
-            
-            # Default to NaN if missing
-            if pulse_width is None or pulse_width == 0:
-                entry['pulse_width_s'] = np.nan
-            else:
-                entry['pulse_width_s'] = pulse_width
-                
+            entry['laser_pulse_width_s'] = laser_pulse_width
             data_list.append(entry)
             
     if not data_list: print("Error: Could not extract angles."); return
@@ -215,7 +210,7 @@ def main():
     df['fluence_uJ_cm2'] = (df['absorbed_energy_nJ'] * 1e-3) / area_cm2
     
     # Power Density (W/cm²)
-    df['Power_Density_W_cm2'] = (df['fluence_uJ_cm2'] * 1e-6) / df['pulse_width_s']
+    df['Power_Density_W_cm2'] = (df['fluence_uJ_cm2'] * 1e-6) / df['laser_pulse_width_s']
     df['Power_Density_W_cm2'] = df['Power_Density_W_cm2'].fillna(0)
 
     # 6. Save

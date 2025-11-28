@@ -1,7 +1,7 @@
 # User Instruction Manual: ASE Automation System (LPL version)
 
 ## Contact Info
-Initial Editor: Yusei Kaya (y-kaya@opera.kyushu-u.ac.jp)
+Initial Editor: Yusei Kaya (y-kaya@opera.kyushu-u.ac.jp, Kaya858 in GitHub)
 Feel free to contact me if you have any questions or need assistance.
 (dear editors, please update this section)
 

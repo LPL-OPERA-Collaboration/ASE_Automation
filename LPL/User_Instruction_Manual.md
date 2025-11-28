@@ -10,6 +10,10 @@ Dear next editor,
 - The aquisition code does not stop firing the laser after each angle's acquisition. To protect the sample from being exposed to the laser for a long time, you can modify the code to stop the laser after each angle's acquisition until the next angle.
 - The FWHM logic in the analysis code is rather simple. You can implement a more advanced FWHM calculation methods (like Sebastien Chenais's normalized integrated intensity decrease method).
 - The codes use "absorption_rate" as a term for (1 - transmission). This sounds a bit weird, so you can change it to "absorption" or "absorptance".
+- I didn't check if the analysis code can read the absorption spectrum file measured by LPL's spectrometer. If it can't, you can modify the code to read it properly.
+- Maybe there is something wrong with the saving of the snapshot of the analysis codes. It seems it's not saving them.
+- While the codes save the log file and the snapshot of themselves (at least they try to do so), maybe it would be nice to add a feature to save the summary of constants/parameters used.
+- The aquisition code can disable the unused channels of the pulser (B,C,D), but the calibration code cannot do so at the moment.
 
 
 
